@@ -12,10 +12,27 @@ import type { Gig, Submission } from "./types";
 const GIG_KEY = (token: string) => `gig:${token}`;
 const INDEX_KEY = "gigs:index";
 
+/**
+ * Accept both naming conventions:
+ *  - UPSTASH_REDIS_REST_URL / _TOKEN  (Upstash native / manual setup)
+ *  - KV_REST_API_URL / _TOKEN         (Vercel Marketplace integration)
+ */
+export function redisEnv(): { url: string; token: string } | null {
+  const url =
+    process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL || "";
+  const token =
+    process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || "";
+  return url && token ? { url, token } : null;
+}
+
 let client: Redis | null = null;
 function redis(): Redis {
   // Lazily created so importing this module never throws when env is absent.
-  if (!client) client = Redis.fromEnv(); // UPSTASH_REDIS_REST_URL / _TOKEN
+  if (!client) {
+    const env = redisEnv();
+    if (!env) throw new Error("Upstash Redis env vars are not set.");
+    client = new Redis(env);
+  }
   return client;
 }
 

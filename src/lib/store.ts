@@ -9,8 +9,9 @@
  */
 import * as jsonStore from "./store-json";
 import * as redisStore from "./store-redis";
+import { redisEnv } from "./store-redis";
 
-const useRedis = Boolean(process.env.UPSTASH_REDIS_REST_URL);
+const useRedis = redisEnv() !== null;
 const store = useRedis ? redisStore : jsonStore;
 
 // The JSON store can't persist on Vercel's read-only filesystem. Reads still
@@ -20,7 +21,7 @@ function assertWritable(): void {
   if (process.env.VERCEL && !useRedis) {
     throw new Error(
       "Storage not configured: running on Vercel without Upstash Redis. " +
-        "Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN, then redeploy.",
+        "Set UPSTASH_REDIS_REST_URL/_TOKEN (or KV_REST_API_URL/_TOKEN), then redeploy.",
     );
   }
 }
