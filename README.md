@@ -97,6 +97,12 @@ Set `NEXT_PUBLIC_BASE_URL` to your real domain so generated links are correct.
 | `ADMIN_PASSWORD`       | yes      | Your password for `/admin` (link creation)           |
 | `SESSION_SECRET`       | yes      | Secret used to sign session cookies (32+ random bytes) |
 | `NEXT_PUBLIC_BASE_URL` | prod     | Public base URL used to build share links            |
+| `UPSTASH_REDIS_REST_URL`   | prod | Upstash Redis REST URL (enables the Redis store)   |
+| `UPSTASH_REDIS_REST_TOKEN` | prod | Upstash Redis REST token                           |
+
+> **Storage auto-detect:** if `UPSTASH_REDIS_REST_URL` is set, the app uses
+> Upstash Redis; otherwise it falls back to the local JSON file. So local dev
+> needs nothing extra, and production just needs the two Upstash vars.
 
 ---
 
@@ -209,12 +215,52 @@ src/
 
 ---
 
-## Swapping the JSON store for a database
+## Deploying to Vercel
 
-The JSON store writes to the local filesystem, which **won't persist on
-serverless/ephemeral hosts** (e.g. Vercel). For those, replace `src/lib/store.ts`
-with a real database — the rest of the app only depends on its four functions:
-`getGig`, `saveGig`, `listGigs`, `deleteGig`. SQLite (`better-sqlite3`), Postgres,
-or Upstash Redis all drop in cleanly. For self-hosting on a VPS with a persistent
-disk, the JSON store is fine as-is.
+Vercel's filesystem is read-only/ephemeral, so the app uses **Upstash Redis** in
+production (auto-detected from env). Steps:
+
+### 1. Create an Upstash Redis database
+
+Easiest via the Vercel Marketplace (it wires the env vars in for you):
+
+- Vercel dashboard → **Storage** → **Marketplace** → **Upstash** → create a Redis
+  database and connect it to your project. This injects `UPSTASH_REDIS_REST_URL`
+  and `UPSTASH_REDIS_REST_TOKEN` automatically.
+
+(Or create a free DB at [upstash.com](https://upstash.com) and copy the two REST
+values into the env vars below yourself.)
+
+### 2. Deploy with the Vercel CLI
+
+```bash
+npm i -g vercel        # install the CLI
+vercel login           # log into YOUR Vercel account
+vercel link            # link this folder to a Vercel project
+
+# Add the secrets (run each, paste the value, choose Production — and Preview if
+# you want preview deploys to work):
+vercel env add ADMIN_PASSWORD
+vercel env add BAND_PASSWORD
+vercel env add SESSION_SECRET            # node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+vercel env add NEXT_PUBLIC_BASE_URL      # e.g. https://your-app.vercel.app
+
+# If you did NOT use the Marketplace integration, also add:
+vercel env add UPSTASH_REDIS_REST_URL
+vercel env add UPSTASH_REDIS_REST_TOKEN
+
+vercel --prod          # build & deploy to production
+```
+
+> After the first deploy you'll get the real domain. Set `NEXT_PUBLIC_BASE_URL`
+> to it (re-run `vercel env add` / update it in the dashboard) and redeploy so
+> generated share links use the correct host.
+
+### Adding another storage backend
+
+The app depends only on the five functions in `src/lib/store.ts`
+(`getGig`, `saveGig`, `listGigs`, `addSubmission`, `deleteGig`). To use Postgres,
+SQLite (Turso), etc., add a `store-<x>.ts` implementing those and branch to it in
+`store.ts`. For self-hosting on a VPS/Railway/Fly.io with a persistent disk, the
+JSON store works as-is — just don't set the Upstash vars.
 ```
