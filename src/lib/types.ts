@@ -5,10 +5,12 @@ export interface Gig {
   /** ISO timestamp the link was created. */
   createdAt: string;
 
-  // ---- Payee (the admin / band) ----
-  payeeName: string;
+  // ---- Payee (the admin / band — who is billed) ----
+  payeeName: string; // business name
+  payeeContact?: string; // contact person
   payeeEmail: string;
   payeeAddress?: string;
+  payeePhone?: string;
 
   // ---- Event ----
   eventName: string;

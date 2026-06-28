@@ -17,6 +17,7 @@ export async function GET() {
   const gigs = await listGigs();
   const baseUrl = config.baseUrl;
   return NextResponse.json({
+    defaults: config.business,
     gigs: gigs.map((g) => ({
       token: g.token,
       eventName: g.eventName,

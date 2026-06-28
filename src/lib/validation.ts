@@ -8,8 +8,10 @@ const isoDate = trimmed.regex(/^\d{4}-\d{2}-\d{2}$/, "Use a valid date");
 export const gigCreateSchema = z
   .object({
     payeeName: trimmed.min(1, "Required").max(200),
+    payeeContact: optionalText,
     payeeEmail: trimmed.email("Enter a valid email").max(200),
     payeeAddress: optionalText,
+    payeePhone: optionalText,
 
     eventName: trimmed.min(1, "Required").max(200),
     eventDate: isoDate,

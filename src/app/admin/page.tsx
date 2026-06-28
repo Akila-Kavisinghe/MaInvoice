@@ -113,8 +113,10 @@ function AdminLogin({ onSuccess }: { onSuccess: () => void }) {
 
 const EMPTY = {
   payeeName: "",
+  payeeContact: "",
   payeeEmail: "",
   payeeAddress: "",
+  payeePhone: "",
   eventName: "",
   eventDate: "",
   venue: "",
@@ -135,8 +137,23 @@ function AdminApp() {
 
   function loadLinks() {
     fetch("/api/admin/links")
-      .then((r) => (r.ok ? r.json() : { gigs: [] }))
-      .then((d) => setLinks(d.gigs ?? []))
+      .then((r) => (r.ok ? r.json() : { gigs: [], defaults: null }))
+      .then((d) => {
+        setLinks(d.gigs ?? []);
+        // Prefill the business fields from env defaults (only when still empty,
+        // so we never clobber what the admin is typing).
+        const def = d.defaults;
+        if (def) {
+          setForm((f) => ({
+            ...f,
+            payeeName: f.payeeName || def.name || "",
+            payeeContact: f.payeeContact || def.contact || "",
+            payeeEmail: f.payeeEmail || def.email || "",
+            payeeAddress: f.payeeAddress || def.address || "",
+            payeePhone: f.payeePhone || def.phone || "",
+          }));
+        }
+      })
       .catch(() => {});
   }
 
@@ -206,8 +223,17 @@ function AdminApp() {
       <Card className="mt-5 p-5">
         <form onSubmit={onSubmit} className="space-y-4" noValidate>
           <SectionTitle>Your details (the band)</SectionTitle>
-          <F label="Your name / business name" err={errors.payeeName}>
+          <p className="-mt-2 text-xs text-slate-400">
+            Prefilled from your saved business info — edit if needed.
+          </p>
+          <F label="Business name" err={errors.payeeName}>
             <Input value={form.payeeName} onChange={(e) => update("payeeName", e.target.value)} />
+          </F>
+          <F label="Contact name" err={errors.payeeContact} hint="(optional)">
+            <Input
+              value={form.payeeContact}
+              onChange={(e) => update("payeeContact", e.target.value)}
+            />
           </F>
           <F label="Your email" err={errors.payeeEmail} hint="(invoices are sent here)">
             <Input
@@ -221,6 +247,13 @@ function AdminApp() {
               rows={2}
               value={form.payeeAddress}
               onChange={(e) => update("payeeAddress", e.target.value)}
+            />
+          </F>
+          <F label="Phone" err={errors.payeePhone} hint="(optional)">
+            <Input
+              type="tel"
+              value={form.payeePhone}
+              onChange={(e) => update("payeePhone", e.target.value)}
             />
           </F>
 

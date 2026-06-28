@@ -99,6 +99,11 @@ Set `NEXT_PUBLIC_BASE_URL` to your real domain so generated links are correct.
 | `NEXT_PUBLIC_BASE_URL` | prod     | Public base URL used to build share links            |
 | `UPSTASH_REDIS_REST_URL`   | prod | Upstash Redis REST URL (enables the Redis store)   |
 | `UPSTASH_REDIS_REST_TOKEN` | prod | Upstash Redis REST token                           |
+| `BUSINESS_NAME`        | no       | Your business name — prefills the admin form         |
+| `BUSINESS_CONTACT`     | no       | Contact person — prefills the admin form             |
+| `BUSINESS_ADDRESS`     | no       | Your address (use `\n` for line breaks)              |
+| `BUSINESS_PHONE`       | no       | Your phone number                                    |
+| `BUSINESS_EMAIL`       | no       | Your business email (where invoices are sent)        |
 
 > **Storage auto-detect:** if `UPSTASH_REDIS_REST_URL` is set, the app uses
 > Upstash Redis; otherwise it falls back to the local JSON file. So local dev

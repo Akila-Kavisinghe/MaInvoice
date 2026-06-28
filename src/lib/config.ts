@@ -30,4 +30,27 @@ export const config = {
       process.env.NEXT_PUBLIC_BASE_URL?.trim() || "http://localhost:3000";
     return raw.replace(/\/+$/, "");
   },
+
+  /**
+   * Your fixed business details, used to prefill the admin form so you never
+   * retype them. All optional — blank fields just aren't prefilled. Use "\n" in
+   * BUSINESS_ADDRESS for multiple lines.
+   */
+  get business() {
+    return {
+      name: process.env.BUSINESS_NAME?.trim() ?? "",
+      contact: process.env.BUSINESS_CONTACT?.trim() ?? "",
+      address: (process.env.BUSINESS_ADDRESS ?? "").replace(/\\n/g, "\n").trim(),
+      phone: process.env.BUSINESS_PHONE?.trim() ?? "",
+      email: process.env.BUSINESS_EMAIL?.trim() ?? "",
+    };
+  },
 };
+
+export interface BusinessDefaults {
+  name: string;
+  contact: string;
+  address: string;
+  phone: string;
+  email: string;
+}

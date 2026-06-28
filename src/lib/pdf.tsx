@@ -183,6 +183,9 @@ function InvoiceDocument({
           <View style={styles.party}>
             <Text style={styles.partyLabel}>Bill to</Text>
             <Text style={styles.partyName}>{gig.payeeName}</Text>
+            {gig.payeeContact ? (
+              <Text style={styles.partyLine}>{gig.payeeContact}</Text>
+            ) : null}
             {gig.payeeAddress
               ? gig.payeeAddress
                   .split("\n")
@@ -192,6 +195,9 @@ function InvoiceDocument({
                     </Text>
                   ))
               : null}
+            {gig.payeePhone ? (
+              <Text style={styles.partyLine}>{gig.payeePhone}</Text>
+            ) : null}
             <Text style={styles.partyLine}>{gig.payeeEmail}</Text>
           </View>
         </View>

@@ -24,3 +24,5 @@ npm-debug.log*
 
 # local data store (contains gig details created by admin)
 /data/*.json
+.vercel
+.env*
