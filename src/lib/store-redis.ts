@@ -1,5 +1,6 @@
 import { Redis } from "@upstash/redis";
 import type { Gig, Submission } from "./types";
+import { mergeSubmission } from "./submissions";
 
 /**
  * Upstash Redis store — serverless-friendly, used in production (Vercel).
@@ -61,7 +62,7 @@ export async function addSubmission(
 ): Promise<void> {
   const gig = await getGig(token);
   if (!gig) return;
-  gig.submissions = [...(gig.submissions ?? []), submission];
+  gig.submissions = mergeSubmission(gig.submissions, submission);
   await redis().set(GIG_KEY(token), gig);
 }
 

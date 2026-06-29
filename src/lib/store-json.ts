@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { Gig, Submission } from "./types";
+import { mergeSubmission } from "./submissions";
 
 /**
  * JSON-file store for LOCAL DEVELOPMENT (persists to ./data/gigs.json).
@@ -64,7 +65,7 @@ export async function addSubmission(
     const db = await readDb();
     const gig = db[token];
     if (!gig) return;
-    gig.submissions = [...(gig.submissions ?? []), submission];
+    gig.submissions = mergeSubmission(gig.submissions, submission);
     await writeDb(db);
   });
   writeChain = op.catch(() => {});
