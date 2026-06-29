@@ -1,4 +1,5 @@
 import React from "react";
+import Image from "next/image";
 
 export function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
@@ -10,13 +11,15 @@ export function Card({ children, className = "" }: { children: React.ReactNode; 
 
 export function Logo({ className = "" }: { className?: string }) {
   return (
-    <div className={`flex items-center gap-2.5 ${className}`}>
-      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-logo-grad text-base font-bold text-white shadow-soft">
-        W
-      </div>
-      <span className="text-lg font-semibold tracking-tight text-ink">
-        WONDER<span className="text-accent">voice</span>
-      </span>
+    <div className={`flex items-center ${className}`}>
+      <Image
+        src="/akila-logo.png"
+        alt="AKILA & The Wonder Machine"
+        width={976}
+        height={553}
+        priority
+        className="h-12 w-auto"
+      />
     </div>
   );
 }
