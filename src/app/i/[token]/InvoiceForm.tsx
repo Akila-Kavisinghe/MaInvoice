@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Banner,
   Button,
@@ -17,6 +17,12 @@ import {
   gmailWebUrl,
   mailtoUrl,
 } from "@/lib/email-links";
+import {
+  clearProfile,
+  loadProfile,
+  PROFILE_FIELDS,
+  saveProfile,
+} from "@/lib/bandmate-profile";
 
 interface GigPublic {
   payeeName: string;
@@ -63,9 +69,32 @@ export default function InvoiceForm({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<GeneratedResult | null>(null);
+  const [saveDetails, setSaveDetails] = useState(false);
+  const [prefilled, setPrefilled] = useState(false);
+
+  // On mount, repopulate the reusable fields from this device's saved profile.
+  useEffect(() => {
+    const profile = loadProfile();
+    if (!profile) return;
+    setForm((f) => {
+      const next = { ...f };
+      for (const key of PROFILE_FIELDS) {
+        if (!next[key] && profile[key]) next[key] = profile[key];
+      }
+      return next;
+    });
+    setSaveDetails(true);
+    setPrefilled(true);
+  }, []);
 
   function update<K extends keyof typeof form>(key: K, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  function forgetSavedDetails() {
+    clearProfile();
+    setSaveDetails(false);
+    setPrefilled(false);
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -99,6 +128,19 @@ export default function InvoiceForm({
         setSubmitError(data.error ?? "Could not generate the invoice.");
         return;
       }
+      // Remember (or forget) the bandmate's reusable details on this device.
+      if (saveDetails) {
+        saveProfile({
+          bandmateName: parsed.data.bandmateName,
+          bandmateEmail: parsed.data.bandmateEmail,
+          bandmateAddress: parsed.data.bandmateAddress ?? "",
+          taxNumber: parsed.data.taxNumber ?? "",
+          paymentMethod: parsed.data.paymentMethod ?? "",
+        });
+      } else {
+        clearProfile();
+      }
+
       const blob = await res.blob();
       const pdfUrl = URL.createObjectURL(blob);
       setResult({
@@ -249,6 +291,33 @@ export default function InvoiceForm({
             />
           </Field>
 
+          <div className="rounded-xl bg-slate-50 p-3.5 ring-1 ring-slate-200">
+            <label className="flex items-start gap-2.5 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 rounded border-slate-300"
+                checked={saveDetails}
+                onChange={(e) => setSaveDetails(e.target.checked)}
+              />
+              <span>
+                Save my details on this device for next time
+                <span className="mt-0.5 block text-xs text-slate-400">
+                  Name, email, address, tax # and payment method. Stays only in
+                  this browser — never sent to the band.
+                </span>
+              </span>
+            </label>
+            {prefilled ? (
+              <button
+                type="button"
+                onClick={forgetSavedDetails}
+                className="mt-2 text-xs font-medium text-slate-500 underline hover:text-slate-700"
+              >
+                Forget saved details
+              </button>
+            ) : null}
+          </div>
+
           {submitError ? <Banner tone="error">{submitError}</Banner> : null}
 
           <Button type="submit" disabled={loading}>
@@ -257,11 +326,17 @@ export default function InvoiceForm({
         </form>
       </Card>
 
-      <p className="mt-4 text-center text-xs text-slate-400">
-        Your name, email, invoice number and amount are saved so the band can
-        track invoices. Your address, tax number and notes appear only on the PDF
-        and aren&apos;t stored.
-      </p>
+      {prefilled ? (
+        <p className="mt-4 text-center text-xs text-slate-400">
+          ✓ Prefilled from your saved details on this device.
+        </p>
+      ) : (
+        <p className="mt-4 text-center text-xs text-slate-400">
+          Your name, email, invoice number and amount are saved so the band can
+          track invoices. Your address, tax number and notes appear only on the
+          PDF and aren&apos;t stored.
+        </p>
+      )}
     </main>
   );
 }
