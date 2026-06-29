@@ -4,6 +4,7 @@ import { addSubmission, getGig } from "@/lib/store";
 import { bandmateSchema } from "@/lib/validation";
 import { renderInvoicePdf } from "@/lib/pdf";
 import { invoiceFilename } from "@/lib/format";
+import { generateInvoiceNumber } from "@/lib/invoice-number";
 import type { BandmateInput } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -36,7 +37,25 @@ export async function POST(
       ? gig.defaultAmount
       : parsed.data.amount;
 
-  const input: BandmateInput = { ...parsed.data, amount };
+  // Unique invoice number, generated server-side. If this bandmate already
+  // submitted for this gig, reuse their existing number so a re-send keeps the
+  // same invoice identity (just with updated content). Otherwise mint a new one
+  // that doesn't collide with any already used for this gig.
+  const emailKey = parsed.data.bandmateEmail.trim().toLowerCase();
+  const existing = (gig.submissions ?? []).find(
+    (s) => s.bandmateEmail.trim().toLowerCase() === emailKey,
+  );
+  let invoiceNumber: string;
+  if (existing) {
+    invoiceNumber = existing.invoiceNumber;
+  } else {
+    const used = new Set((gig.submissions ?? []).map((s) => s.invoiceNumber));
+    do {
+      invoiceNumber = generateInvoiceNumber();
+    } while (used.has(invoiceNumber));
+  }
+
+  const input: BandmateInput = { ...parsed.data, amount, invoiceNumber };
 
   const pdf = await renderInvoicePdf(gig, input);
   const filename = invoiceFilename(input.bandmateName, gig.eventName, gig.eventDate);
@@ -57,6 +76,7 @@ export async function POST(
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="${filename.replace(/"/g, "")}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
       "Cache-Control": "no-store",
+      "X-Invoice-Number": invoiceNumber,
     },
   });
 }

@@ -41,6 +41,7 @@ interface GeneratedResult {
   filename: string;
   bandmateName: string;
   bandmateEmail: string;
+  invoiceNumber: string;
 }
 
 type Errors = Partial<Record<string, string>>;
@@ -58,7 +59,6 @@ export default function InvoiceForm({
     bandmateName: "",
     bandmateEmail: "",
     bandmateAddress: "",
-    invoiceNumber: "",
     // Prefill with the band's default amount when one is set (locked or not).
     amount: gig.defaultAmount != null ? String(gig.defaultAmount) : "",
     taxNumber: "",
@@ -141,6 +141,7 @@ export default function InvoiceForm({
         clearProfile();
       }
 
+      const invoiceNumber = res.headers.get("X-Invoice-Number") ?? "";
       const blob = await res.blob();
       const pdfUrl = URL.createObjectURL(blob);
       setResult({
@@ -148,6 +149,7 @@ export default function InvoiceForm({
         filename: invoiceFilename(parsed.data.bandmateName, gig.eventName, gig.eventDate),
         bandmateName: parsed.data.bandmateName,
         bandmateEmail: parsed.data.bandmateEmail,
+        invoiceNumber,
       });
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch {
@@ -178,8 +180,17 @@ export default function InvoiceForm({
         <h1 className="text-2xl font-bold text-slate-900">Your invoice details</h1>
         <p className="mt-1 text-sm text-slate-600">
           The gig info is already filled in. Just add your details and tap{" "}
-          <span className="font-medium">Generate invoice</span>.
+          <span className="font-medium">Generate invoice</span>. A unique invoice
+          number is added for you automatically.
         </p>
+        <div className="mt-3">
+          <Banner tone="info">
+            Already sent one for this event? Generating again{" "}
+            <span className="font-semibold">replaces your previous submission</span>{" "}
+            — the band only keeps your most recent invoice, under the same invoice
+            number.
+          </Banner>
+        </div>
       </header>
 
       {/* Prefilled gig summary (read-only) */}
@@ -232,14 +243,6 @@ export default function InvoiceForm({
               value={form.bandmateAddress}
               onChange={(e) => update("bandmateAddress", e.target.value)}
               placeholder="123 Main St, City, Province"
-            />
-          </Field>
-
-          <Field label="Invoice number" error={errors.invoiceNumber}>
-            <Input
-              value={form.invoiceNumber}
-              onChange={(e) => update("invoiceNumber", e.target.value)}
-              placeholder="2026-001"
             />
           </Field>
 
@@ -391,6 +394,7 @@ function SuccessView({
         bandmateName: result.bandmateName,
         eventName,
         eventDate,
+        invoiceNumber: result.invoiceNumber,
       }),
     [adminEmail, result, eventName, eventDate],
   );
@@ -405,7 +409,16 @@ function SuccessView({
             ✅
           </div>
           <h1 className="text-xl font-bold text-slate-900">Invoice ready</h1>
+          {result.invoiceNumber ? (
+            <p className="mt-1 text-sm font-medium text-slate-700">
+              Invoice #{result.invoiceNumber}
+            </p>
+          ) : null}
           <p className="mt-1 text-sm text-slate-600">Two quick steps left.</p>
+          <p className="mt-2 text-xs text-slate-400">
+            This is now your current invoice for {eventName} — it replaces any
+            earlier one you sent.
+          </p>
         </div>
 
         {/* Step 1: download */}

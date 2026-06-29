@@ -21,12 +21,14 @@ export function buildEmailParts(args: {
   bandmateName: string;
   eventName: string;
   eventDate: string;
+  invoiceNumber: string;
 }): EmailParts {
-  const { adminEmail, bandmateEmail, bandmateName, eventName, eventDate } = args;
-  const subject = `Invoice - ${bandmateName} - ${eventName}`;
+  const { adminEmail, bandmateEmail, bandmateName, eventName, eventDate, invoiceNumber } =
+    args;
+  const subject = `Invoice ${invoiceNumber} - ${bandmateName} - ${eventName}`;
   const body =
     `Hi,\n\n` +
-    `Attached is my invoice for ${eventName} on ${formatDate(eventDate)}.\n\n` +
+    `Attached is my invoice (${invoiceNumber}) for ${eventName} on ${formatDate(eventDate)}.\n\n` +
     `(Reminder to myself: attach the downloaded PDF before sending!)\n\n` +
     `Thanks,\n${bandmateName}`;
   return { to: adminEmail, cc: bandmateEmail, subject, body };

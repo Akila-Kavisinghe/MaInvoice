@@ -39,7 +39,7 @@ export const bandmateSchema = z.object({
   bandmateName: trimmed.min(1, "Required").max(200),
   bandmateEmail: trimmed.email("Enter a valid email").max(200),
   bandmateAddress: optionalText,
-  invoiceNumber: trimmed.min(1, "Required").max(60),
+  // invoiceNumber is generated server-side, not supplied by the bandmate.
   amount: z
     .number({ invalid_type_error: "Enter a number" })
     .positive("Enter an amount greater than 0")
