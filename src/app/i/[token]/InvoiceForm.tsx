@@ -8,6 +8,7 @@ import {
   FieldError,
   Input,
   Label,
+  Logo,
   Textarea,
 } from "@/components/ui";
 import { bandmateSchema } from "@/lib/validation";
@@ -176,8 +177,9 @@ export default function InvoiceForm({
 
   return (
     <main className="mx-auto max-w-md px-4 py-8">
+      <Logo className="mb-6" />
       <header className="mb-5">
-        <h1 className="text-2xl font-bold text-slate-900">Your invoice details</h1>
+        <h1 className="text-2xl font-semibold text-ink">Your invoice details</h1>
         <p className="mt-1 text-sm text-slate-600">
           The gig info is already filled in. Just add your details and tap{" "}
           <span className="font-medium">Generate invoice</span>. A unique invoice
@@ -403,12 +405,13 @@ function SuccessView({
 
   return (
     <main className="mx-auto max-w-md px-4 py-8">
+      <Logo className="mb-6" />
       <Card className="p-6">
         <div className="text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-2xl">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full border border-hair bg-elev text-2xl">
             ✅
           </div>
-          <h1 className="text-xl font-bold text-slate-900">Invoice ready</h1>
+          <h1 className="text-xl font-semibold text-ink">Invoice ready</h1>
           {result.invoiceNumber ? (
             <p className="mt-1 text-sm font-medium text-slate-700">
               Invoice #{result.invoiceNumber}
@@ -428,7 +431,7 @@ function SuccessView({
             href={result.pdfUrl}
             download={result.filename}
             onClick={() => setDownloaded(true)}
-            className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 px-4 py-3 text-base font-semibold text-white transition hover:bg-brand-700"
+            className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-[10px] bg-primary-grad px-4 py-3 text-base font-semibold text-white shadow-soft transition hover:brightness-[1.08] active:translate-y-px"
           >
             ⬇️ Download invoice
           </a>
@@ -451,13 +454,13 @@ function SuccessView({
               href={gmailWebUrl(email)}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-base font-semibold text-slate-800 ring-1 ring-inset ring-slate-300 transition hover:bg-slate-50"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-[10px] border border-hair bg-panel px-4 py-3 text-base font-semibold text-ink transition hover:border-hair-bright hover:bg-elev"
             >
               ✉️ Open in Gmail
             </a>
             <a
               href={mailtoUrl(email)}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-3 text-base font-semibold text-slate-800 ring-1 ring-inset ring-slate-300 transition hover:bg-slate-50"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-[10px] border border-hair bg-panel px-4 py-3 text-base font-semibold text-ink transition hover:border-hair-bright hover:bg-elev"
             >
               📱 Open default mail app
             </a>

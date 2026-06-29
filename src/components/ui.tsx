@@ -2,8 +2,21 @@ import React from "react";
 
 export function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 ${className}`}>
+    <div className={`rounded-2xl border border-hair bg-panel ${className}`}>
       {children}
+    </div>
+  );
+}
+
+export function Logo({ className = "" }: { className?: string }) {
+  return (
+    <div className={`flex items-center gap-2.5 ${className}`}>
+      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-logo-grad text-base font-bold text-white shadow-soft">
+        W
+      </div>
+      <span className="text-lg font-semibold tracking-tight text-ink">
+        WONDER<span className="text-accent">voice</span>
+      </span>
     </div>
   );
 }
@@ -18,15 +31,18 @@ export function Label({
   hint?: string;
 }) {
   return (
-    <label htmlFor={htmlFor} className="mb-1.5 block text-sm font-medium text-slate-700">
+    <label
+      htmlFor={htmlFor}
+      className="mb-1.5 block text-sm font-medium text-dim"
+    >
       {children}
-      {hint ? <span className="ml-1 font-normal text-slate-400">{hint}</span> : null}
+      {hint ? <span className="ml-1.5 font-normal text-muted">{hint}</span> : null}
     </label>
   );
 }
 
 const fieldClasses =
-  "w-full rounded-xl border border-slate-300 bg-white px-3.5 py-3 text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-100 disabled:text-slate-500";
+  "w-full rounded-[10px] border border-hair bg-elev px-3.5 py-3 text-ink placeholder:text-muted outline-none transition focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:bg-panel disabled:text-muted";
 
 export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
   function Input(props, ref) {
@@ -43,7 +59,7 @@ export const Textarea = React.forwardRef<
 
 export function FieldError({ message }: { message?: string }) {
   if (!message) return null;
-  return <p className="mt-1 text-sm text-red-600">{message}</p>;
+  return <p className="mt-1 text-sm text-danger">{message}</p>;
 }
 
 export function Button({
@@ -55,12 +71,12 @@ export function Button({
   variant?: "primary" | "secondary" | "ghost";
 }) {
   const base =
-    "inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-base font-semibold transition focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60";
+    "inline-flex w-full items-center justify-center gap-2 rounded-[10px] px-4 py-3 text-base font-semibold transition-[transform,filter,background-color,border-color,opacity] duration-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40";
   const variants = {
-    primary: "bg-brand-600 text-white hover:bg-brand-700 focus:ring-brand-500",
+    primary: "bg-primary-grad text-white shadow-soft hover:brightness-[1.08]",
     secondary:
-      "bg-white text-slate-800 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:ring-brand-500",
-    ghost: "bg-transparent text-slate-600 hover:bg-slate-100 focus:ring-slate-300",
+      "border border-hair bg-panel text-ink hover:border-hair-bright hover:bg-elev",
+    ghost: "bg-transparent text-dim hover:bg-elev hover:text-ink",
   } as const;
   return (
     <button {...props} className={`${base} ${variants[variant]} ${className}`}>
@@ -77,11 +93,11 @@ export function Banner({
   children: React.ReactNode;
 }) {
   const tones = {
-    info: "bg-brand-50 text-brand-700 ring-brand-100",
-    error: "bg-red-50 text-red-700 ring-red-100",
-    success: "bg-emerald-50 text-emerald-700 ring-emerald-100",
+    info: "bg-accent/10 text-accent ring-accent/20",
+    error: "bg-danger/10 text-danger ring-danger/20",
+    success: "bg-success/10 text-success ring-success/20",
   } as const;
   return (
-    <div className={`rounded-xl px-4 py-3 text-sm ring-1 ${tones[tone]}`}>{children}</div>
+    <div className={`rounded-[10px] px-4 py-3 text-sm ring-1 ${tones[tone]}`}>{children}</div>
   );
 }

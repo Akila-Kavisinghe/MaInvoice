@@ -14,7 +14,7 @@ const COLORS = {
   ink: "#111827",
   muted: "#6b7280",
   line: "#e5e7eb",
-  brand: "#4f46e5",
+  brand: "#4f8cff",
   soft: "#f3f4f6",
 };
 
@@ -262,6 +262,7 @@ function InvoiceDocument({
 
         <Text style={styles.footer} fixed>
           Invoice {input.invoiceNumber} · {input.bandmateName} · {gig.eventName}
+          {"  ·  Generated with WONDERvoice"}
         </Text>
       </Page>
     </Document>

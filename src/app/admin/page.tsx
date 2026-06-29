@@ -8,6 +8,7 @@ import {
   FieldError,
   Input,
   Label,
+  Logo,
   Textarea,
 } from "@/components/ui";
 import { gigCreateSchema } from "@/lib/validation";
@@ -84,9 +85,10 @@ function AdminLogin({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-10">
+      <Logo className="mb-6" />
       <Card className="p-7">
-        <h1 className="text-xl font-bold">Admin sign in</h1>
-        <p className="mt-1 text-sm text-slate-600">
+        <h1 className="text-xl font-semibold text-ink">Admin sign in</h1>
+        <p className="mt-1 text-sm text-dim">
           Use your admin password to create invoice links.
         </p>
         <form onSubmit={onSubmit} className="mt-5 space-y-4">
@@ -208,8 +210,9 @@ function AdminApp() {
 
   return (
     <main className="mx-auto max-w-lg px-4 py-8">
-      <h1 className="text-2xl font-bold text-slate-900">Create an invoice link</h1>
-      <p className="mt-1 text-sm text-slate-600">
+      <Logo className="mb-6" />
+      <h1 className="text-2xl font-semibold text-ink">Create an invoice link</h1>
+      <p className="mt-1 text-sm text-dim">
         Fill in the shared gig details once, then send the link to your bandmate.
       </p>
 

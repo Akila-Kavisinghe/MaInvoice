@@ -1,4 +1,4 @@
-# Band Invoice
+# WONDERvoice
 
 A small, polished invoice generator for bands. **You** (the admin) create a
 prefilled, tokenized link for each gig and send it to a bandmate. They unlock it

@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 }
 
 html,
@@ -12,7 +12,21 @@ body {
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  min-height: 100vh;
+  /* Canvas isn't flat — a subtle radial glow in the top-right. */
+  background-color: #0b0d12;
+  background-image: radial-gradient(
+    1200px 800px at 70% -10%,
+    #161b27 0%,
+    #0b0d12 55%
+  );
+  background-attachment: fixed;
+  color: #e7ecf3;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Avoid iOS zoom-on-focus by keeping inputs at >=16px. */
@@ -20,4 +34,25 @@ input,
 textarea,
 select {
   font-size: 16px;
+}
+
+input[type="checkbox"] {
+  accent-color: #4f8cff;
+}
+
+/* Thin, rounded scrollbars to match the editor aesthetic. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2c3545 transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2c3545;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }
