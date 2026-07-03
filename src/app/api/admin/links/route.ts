@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
-import { createUnlockKey, hasValidSession } from "@/lib/auth";
+import { createUnlockKey, hasValidSession, sameOrigin } from "@/lib/auth";
 import { config } from "@/lib/config";
 import { deleteGig, listGigs, saveGig } from "@/lib/store";
 import { gigCreateSchema } from "@/lib/validation";
@@ -13,7 +13,7 @@ function unauthorized() {
 }
 
 export async function GET() {
-  if (!hasValidSession("admin")) return unauthorized();
+  if (!(await hasValidSession("admin"))) return unauthorized();
   const gigs = await listGigs();
   const baseUrl = config.baseUrl;
   return NextResponse.json({
@@ -30,7 +30,10 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  if (!hasValidSession("admin")) return unauthorized();
+  if (!sameOrigin(req)) {
+    return NextResponse.json({ error: "Bad origin" }, { status: 403 });
+  }
+  if (!(await hasValidSession("admin"))) return unauthorized();
 
   const parsed = gigCreateSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -55,7 +58,10 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  if (!hasValidSession("admin")) return unauthorized();
+  if (!sameOrigin(req)) {
+    return NextResponse.json({ error: "Bad origin" }, { status: 403 });
+  }
+  if (!(await hasValidSession("admin"))) return unauthorized();
 
   const token = new URL(req.url).searchParams.get("token");
   if (!token) {

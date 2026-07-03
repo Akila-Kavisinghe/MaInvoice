@@ -11,17 +11,19 @@ export default async function InvoiceLinkPage({
   params,
   searchParams,
 }: {
-  params: { token: string };
-  searchParams: { k?: string };
+  params: Promise<{ token: string }>;
+  searchParams: Promise<{ k?: string }>;
 }) {
-  const gig = await getGig(params.token);
+  const { token } = await params;
+  const { k } = await searchParams;
+  const gig = await getGig(token);
 
   // Per-link auto-unlock: if the share link carries a key and there's no band
   // session yet, hand off to the unlock route to verify it and set the cookie,
   // then return to the clean URL. Cookies can't be set from a server component.
-  if (gig && searchParams.k && !hasValidSession("band")) {
+  if (gig && k && !(await hasValidSession("band"))) {
     redirect(
-      `/api/auth/unlock?token=${encodeURIComponent(params.token)}&k=${encodeURIComponent(searchParams.k)}`,
+      `/api/auth/unlock?token=${encodeURIComponent(token)}&k=${encodeURIComponent(k)}`,
     );
   }
 
@@ -41,7 +43,7 @@ export default async function InvoiceLinkPage({
 
   // SECURITY: do not render the prefilled form (or any gig details) until the
   // shared password has been verified server-side.
-  if (!hasValidSession("band")) {
+  if (!(await hasValidSession("band"))) {
     return <PasswordGate />;
   }
 

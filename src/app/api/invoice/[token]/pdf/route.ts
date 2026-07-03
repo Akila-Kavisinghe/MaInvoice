@@ -1,24 +1,40 @@
 import { NextResponse } from "next/server";
-import { hasValidSession } from "@/lib/auth";
+import { hasValidSession, sameOrigin } from "@/lib/auth";
 import { addSubmission, getGig } from "@/lib/store";
 import { bandmateSchema } from "@/lib/validation";
 import { renderInvoicePdf } from "@/lib/pdf";
 import { invoiceFilename } from "@/lib/format";
 import { generateInvoiceNumber } from "@/lib/invoice-number";
+import { clientIp, rateLimit } from "@/lib/ratelimit";
 import type { BandmateInput } from "@/lib/types";
 
 export const runtime = "nodejs";
 
 export async function POST(
   req: Request,
-  { params }: { params: { token: string } },
+  { params }: { params: Promise<{ token: string }> },
 ) {
+  if (!sameOrigin(req)) {
+    return NextResponse.json({ error: "Bad origin" }, { status: 403 });
+  }
+
   // Gate: only authenticated bandmates can generate.
-  if (!hasValidSession("band")) {
+  if (!(await hasValidSession("band"))) {
     return NextResponse.json({ error: "Not authorized" }, { status: 401 });
   }
 
-  const gig = await getGig(params.token);
+  // PDF rendering is comparatively expensive — keep one client from
+  // hammering it.
+  const limit = await rateLimit(`pdf:${clientIp(req.headers)}`, 30, 5 * 60 * 1000);
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { error: `Too many requests. Try again in ${limit.retryAfterSeconds}s.` },
+      { status: 429 },
+    );
+  }
+
+  const { token } = await params;
+  const gig = await getGig(token);
   if (!gig) {
     return NextResponse.json({ error: "Invoice link not found" }, { status: 404 });
   }
@@ -63,13 +79,19 @@ export async function POST(
   // Record a MINIMAL submission for admin tracking (who invoiced, for how much,
   // when). Address / tax # / payment method / notes are deliberately NOT stored
   // — they exist only in the generated PDF.
-  await addSubmission(params.token, {
-    bandmateName: input.bandmateName,
-    bandmateEmail: input.bandmateEmail,
-    invoiceNumber: input.invoiceNumber,
-    amount: input.amount,
-    submittedAt: new Date().toISOString(),
-  });
+  try {
+    await addSubmission(token, {
+      bandmateName: input.bandmateName,
+      bandmateEmail: input.bandmateEmail,
+      invoiceNumber: input.invoiceNumber,
+      amount: input.amount,
+      submittedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    // Tracking is secondary to delivering the invoice — hand the PDF back
+    // even if the store write failed.
+    console.error("addSubmission failed for gig", token, err);
+  }
   return new NextResponse(new Uint8Array(pdf), {
     status: 200,
     headers: {

@@ -39,6 +39,8 @@ interface GigPublic {
 
 interface GeneratedResult {
   pdfUrl: string;
+  /** Raw PDF bytes, kept so we can share the actual file via the share sheet. */
+  blob: Blob;
   filename: string;
   bandmateName: string;
   bandmateEmail: string;
@@ -119,14 +121,23 @@ export default function InvoiceForm({
     setErrors({});
     setLoading(true);
     try {
-      const res = await fetch(`/api/invoice/${token}/pdf`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parsed.data),
-      });
+      let res: Response;
+      try {
+        res = await fetch(`/api/invoice/${token}/pdf`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(parsed.data),
+        });
+      } catch {
+        setSubmitError(
+          "Network problem — check your connection and tap Generate again. " +
+            "Retrying is safe: you keep the same invoice number.",
+        );
+        return;
+      }
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setSubmitError(data.error ?? "Could not generate the invoice.");
+        setSubmitError(data.error ?? "Could not generate the invoice. Please try again.");
         return;
       }
       // Remember (or forget) the bandmate's reusable details on this device.
@@ -143,18 +154,29 @@ export default function InvoiceForm({
       }
 
       const invoiceNumber = res.headers.get("X-Invoice-Number") ?? "";
-      const blob = await res.blob();
+      let blob: Blob;
+      try {
+        blob = await res.blob();
+      } catch {
+        // The server already generated (and recorded) the invoice; only the
+        // download failed. Regenerating reuses the same invoice number, so
+        // retrying is harmless.
+        setSubmitError(
+          "Your invoice was created but the download was interrupted. " +
+            "Tap Generate again — you'll get the same invoice number.",
+        );
+        return;
+      }
       const pdfUrl = URL.createObjectURL(blob);
       setResult({
         pdfUrl,
+        blob,
         filename: invoiceFilename(parsed.data.bandmateName, gig.eventName, gig.eventDate),
         bandmateName: parsed.data.bandmateName,
         bandmateEmail: parsed.data.bandmateEmail,
         invoiceNumber,
       });
       window.scrollTo({ top: 0, behavior: "smooth" });
-    } catch {
-      setSubmitError("Network error. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -402,6 +424,53 @@ function SuccessView({
   );
 
   const [downloaded, setDownloaded] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // Web Share API with a file: on phones this opens the share sheet with the
+  // PDF already attached — the user picks Mail/Gmail and just adds the To
+  // address. mailto: links can never attach files, so this is the only way to
+  // hand the PDF to a mail app directly.
+  const shareFile = useMemo(
+    () => new File([result.blob], result.filename, { type: "application/pdf" }),
+    [result],
+  );
+  const canShare =
+    typeof navigator !== "undefined" &&
+    typeof navigator.canShare === "function" &&
+    navigator.canShare({ files: [shareFile] });
+
+  async function shareInvoice() {
+    // The PDF travels with the share, so drop the "attach before sending"
+    // self-reminder from the message body.
+    const shareEmail = buildEmailParts({
+      adminEmail,
+      bandmateEmail: result.bandmateEmail,
+      bandmateName: result.bandmateName,
+      eventName,
+      eventDate,
+      invoiceNumber: result.invoiceNumber,
+      attachReminder: false,
+    });
+    try {
+      await navigator.share({
+        files: [shareFile],
+        title: shareEmail.subject,
+        text: shareEmail.body,
+      });
+    } catch {
+      /* user closed the share sheet — not an error */
+    }
+  }
+
+  async function copyTo() {
+    try {
+      await navigator.clipboard.writeText(email.to);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard blocked — the address is visible to copy manually */
+    }
+  }
 
   return (
     <main className="mx-auto max-w-md px-4 py-8">
@@ -417,7 +486,6 @@ function SuccessView({
               Invoice #{result.invoiceNumber}
             </p>
           ) : null}
-          <p className="mt-1 text-sm text-slate-600">Two quick steps left.</p>
           <p className="mt-2 text-xs text-slate-400">
             This is now your current invoice for {eventName} — it replaces any
             earlier one you sent.
@@ -442,12 +510,57 @@ function SuccessView({
 
         {/* Step 2: email */}
         <div className="mt-6">
-          <StepHeading n={2} title="Open email & attach the PDF" />
-          <Banner tone="info">
-            Email can&apos;t attach the file for you. After it opens, tap the{" "}
-            <span className="font-semibold">paperclip / attach</span> button and pick
-            the PDF you just downloaded, then send.
-          </Banner>
+          {canShare ? (
+            <>
+              <StepHeading n={2} title="Email it — PDF already attached" />
+              <button
+                type="button"
+                onClick={shareInvoice}
+                className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-[10px] bg-primary-grad px-4 py-3 text-base font-semibold text-white shadow-soft transition hover:brightness-[1.08] active:translate-y-px"
+              >
+                ✉️ Email with PDF attached
+              </button>
+              <p className="mt-2 text-center text-xs text-slate-500">
+                Pick your mail app in the share sheet — the invoice is attached
+                for you. Then paste the address below into{" "}
+                <span className="font-medium">To</span> and send.
+              </p>
+            </>
+          ) : (
+            <>
+              <StepHeading n={2} title="Open email & attach the PDF" />
+              <Banner tone="info">
+                Email can&apos;t attach the file for you. After it opens, tap the{" "}
+                <span className="font-semibold">paperclip / attach</span> button and
+                pick the PDF you just downloaded, then send.{" "}
+                <span className="font-semibold">
+                  Don&apos;t paste the download link
+                </span>{" "}
+                — it only works on this device.
+              </Banner>
+            </>
+          )}
+
+          <div className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+            <div className="flex items-center justify-between gap-2">
+              <p className="min-w-0 truncate">
+                <span className="text-slate-400">To:</span> {email.to}
+              </p>
+              <button
+                type="button"
+                onClick={copyTo}
+                className="shrink-0 rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-500 hover:bg-white hover:text-slate-700"
+              >
+                {copied ? "✓ Copied" : "Copy"}
+              </button>
+            </div>
+            <p>
+              <span className="text-slate-400">Cc (you):</span> {email.cc}
+            </p>
+            <p className="mt-1">
+              <span className="text-slate-400">Subject:</span> {email.subject}
+            </p>
+          </div>
 
           <div className="mt-3 space-y-2.5">
             <a
@@ -456,26 +569,14 @@ function SuccessView({
               rel="noopener noreferrer"
               className="inline-flex w-full items-center justify-center gap-2 rounded-[10px] border border-hair bg-panel px-4 py-3 text-base font-semibold text-ink transition hover:border-hair-bright hover:bg-elev"
             >
-              ✉️ Open in Gmail
+              ✉️ Open in Gmail{canShare ? " (no attachment)" : ""}
             </a>
             <a
               href={mailtoUrl(email)}
               className="inline-flex w-full items-center justify-center gap-2 rounded-[10px] border border-hair bg-panel px-4 py-3 text-base font-semibold text-ink transition hover:border-hair-bright hover:bg-elev"
             >
-              📱 Open default mail app
+              📱 Open default mail app{canShare ? " (no attachment)" : ""}
             </a>
-          </div>
-
-          <div className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
-            <p>
-              <span className="text-slate-400">To:</span> {email.to}
-            </p>
-            <p>
-              <span className="text-slate-400">Cc (you):</span> {email.cc}
-            </p>
-            <p className="mt-1">
-              <span className="text-slate-400">Subject:</span> {email.subject}
-            </p>
           </div>
         </div>
 

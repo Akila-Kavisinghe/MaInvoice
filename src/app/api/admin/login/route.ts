@@ -4,6 +4,7 @@ import {
   createSessionValue,
   cookieName,
   passwordMatches,
+  sameOrigin,
   sessionCookieOptions,
 } from "@/lib/auth";
 import { clientIp, clearRateLimit, rateLimit } from "@/lib/ratelimit";
@@ -12,8 +13,12 @@ import { passwordSchema } from "@/lib/validation";
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
+  if (!sameOrigin(req)) {
+    return NextResponse.json({ error: "Bad origin" }, { status: 403 });
+  }
+
   const ip = clientIp(req.headers);
-  const limit = rateLimit(`admin-login:${ip}`, 5, 5 * 60 * 1000);
+  const limit = await rateLimit(`admin-login:${ip}`, 5, 5 * 60 * 1000);
   if (!limit.allowed) {
     return NextResponse.json(
       { error: `Too many attempts. Try again in ${limit.retryAfterSeconds}s.` },
@@ -30,8 +35,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Incorrect password" }, { status: 401 });
   }
 
-  clearRateLimit(`admin-login:${ip}`);
+  await clearRateLimit(`admin-login:${ip}`);
   const res = NextResponse.json({ ok: true });
-  res.cookies.set(cookieName("admin"), createSessionValue("admin"), sessionCookieOptions);
+  res.cookies.set(cookieName("admin"), createSessionValue("admin"), sessionCookieOptions("admin"));
   return res;
 }

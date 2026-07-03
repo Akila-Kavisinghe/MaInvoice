@@ -71,17 +71,23 @@ export function cookieName(role: Role): string {
   return COOKIE_NAME[role];
 }
 
-export const sessionCookieOptions = {
-  httpOnly: true,
-  sameSite: "lax" as const,
-  secure: process.env.NODE_ENV === "production",
-  path: "/",
-  maxAge: SESSION_TTL_SECONDS,
-};
+export function sessionCookieOptions(role: Role) {
+  return {
+    httpOnly: true,
+    // Band stays "lax" because the unlock flow sets the cookie during a
+    // cross-site top-level navigation (link clicked from an email). The admin
+    // cookie is only ever used by same-origin fetches, so "strict" is safe and
+    // removes it from any cross-site request.
+    sameSite: role === "admin" ? ("strict" as const) : ("lax" as const),
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: SESSION_TTL_SECONDS,
+  };
+}
 
 /** Read & verify the session for a role from the incoming request cookies. */
-export function hasValidSession(role: Role): boolean {
-  const token = cookies().get(COOKIE_NAME[role])?.value;
+export async function hasValidSession(role: Role): Promise<boolean> {
+  const token = (await cookies()).get(COOKIE_NAME[role])?.value;
   const payload = decode(token);
   return payload?.role === role;
 }
@@ -110,11 +116,32 @@ export function verifyUnlockKey(token: string, key: string | undefined): boolean
 }
 
 /**
+ * Defense-in-depth CSRF check for state-changing routes: if the browser sent
+ * an Origin header, it must match the host the request arrived at. Browsers
+ * always send Origin on cross-site fetch/form submissions, so this blocks
+ * CSRF even if a SameSite cookie were ever sent. Requests with no Origin
+ * (curl, server-to-server) pass — they carry no ambient cookies to abuse.
+ */
+export function sameOrigin(req: Request): boolean {
+  const origin = req.headers.get("origin");
+  if (!origin) return true;
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  if (!host) return false;
+  try {
+    return new URL(origin).host === host;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Compare a user-supplied password to the configured one in constant time.
+ * Both sides are HMACed first so the comparison never branches on length —
+ * a plain length check would leak the password's length via response timing.
  */
 export function passwordMatches(input: string, expected: string): boolean {
-  const a = Buffer.from(input);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
+  const key = crypto.randomBytes(32);
+  const a = crypto.createHmac("sha256", key).update(input).digest();
+  const b = crypto.createHmac("sha256", key).update(expected).digest();
   return crypto.timingSafeEqual(a, b);
 }

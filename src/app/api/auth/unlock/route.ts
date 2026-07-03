@@ -29,6 +29,6 @@ export async function GET(req: Request) {
   }
 
   const res = NextResponse.redirect(clean);
-  res.cookies.set(cookieName("band"), createSessionValue("band"), sessionCookieOptions);
+  res.cookies.set(cookieName("band"), createSessionValue("band"), sessionCookieOptions("band"));
   return res;
 }

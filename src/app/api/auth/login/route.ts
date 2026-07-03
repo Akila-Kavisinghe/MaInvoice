@@ -4,6 +4,7 @@ import {
   createSessionValue,
   cookieName,
   passwordMatches,
+  sameOrigin,
   sessionCookieOptions,
 } from "@/lib/auth";
 import { clientIp, clearRateLimit, rateLimit } from "@/lib/ratelimit";
@@ -12,8 +13,12 @@ import { passwordSchema } from "@/lib/validation";
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
+  if (!sameOrigin(req)) {
+    return NextResponse.json({ error: "Bad origin" }, { status: 403 });
+  }
+
   const ip = clientIp(req.headers);
-  const limit = rateLimit(`band-login:${ip}`, 8, 5 * 60 * 1000);
+  const limit = await rateLimit(`band-login:${ip}`, 8, 5 * 60 * 1000);
   if (!limit.allowed) {
     return NextResponse.json(
       { error: `Too many attempts. Try again in ${limit.retryAfterSeconds}s.` },
@@ -33,8 +38,8 @@ export async function POST(req: Request) {
     );
   }
 
-  clearRateLimit(`band-login:${ip}`);
+  await clearRateLimit(`band-login:${ip}`);
   const res = NextResponse.json({ ok: true });
-  res.cookies.set(cookieName("band"), createSessionValue("band"), sessionCookieOptions);
+  res.cookies.set(cookieName("band"), createSessionValue("band"), sessionCookieOptions("band"));
   return res;
 }
