@@ -73,7 +73,7 @@ export default function UsersCard() {
       </p>
 
       <form onSubmit={add} className="mt-4 flex items-end gap-2">
-        <div className="flex-1">
+        <div className="min-w-0 flex-1">
           <Label htmlFor="new-user-email">Google email</Label>
           <Input
             id="new-user-email"
@@ -83,10 +83,11 @@ export default function UsersCard() {
             placeholder="friend@gmail.com"
           />
         </div>
+        {/* h matches the input exactly: py-3 + text-base line + 1px borders = 50px */}
         <Button
           type="submit"
           disabled={loading || !email}
-          className="w-auto px-5 py-3"
+          className="h-[50px] w-auto shrink-0 px-5 py-0"
         >
           {loading ? "Adding…" : "Add"}
         </Button>
