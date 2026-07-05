@@ -1,51 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Banner,
-  Button,
-  Card,
-  Input,
-  Label,
-  Logo,
-  Textarea,
-} from "@/components/ui";
+import Link from "next/link";
+import { Banner, Button, Card } from "@/components/ui";
 import { formatDate, formatMoney } from "@/lib/format";
-import type { BusinessInfo, Contact, LibraryEntry } from "./lib-types";
-import OutboundForm from "./OutboundForm";
+import type { Contact, LibraryEntry, RemoteInfo } from "./lib-types";
 import ContactsCard from "./ContactsCard";
-import BusinessCard from "./BusinessCard";
-import LinkForm from "./LinkForm";
+import FolderPicker from "./FolderPicker";
 
 interface Feedback {
   tone: "success" | "error" | "info";
   message: string;
 }
 
-interface RemoteInfo {
-  url: string | null;
-  configured: boolean;
-}
-
 type DirectionFilter = "all" | "inbound" | "outbound";
 type PaidFilter = "all" | "unpaid" | "paid";
 
-const DEFAULT_SERVER_URL = "https://mainvoice-sigma.vercel.app";
-const EMPTY_BUSINESS: BusinessInfo = {
-  name: "",
-  email: "",
-  address: "",
-  phone: "",
-  taxNumber: "",
-};
-
+/** The Invoices page: browse, filter, sync, fulfill. */
 export default function LibraryApp({ initialDir }: { initialDir: string | null }) {
   const [invoiceDir, setInvoiceDir] = useState<string | null>(initialDir);
-  const [picking, setPicking] = useState(initialDir === null);
   const [remote, setRemote] = useState<RemoteInfo | null>(null); // null = loading
-  const [editingServer, setEditingServer] = useState(false);
-  const [business, setBusiness] = useState<BusinessInfo>(EMPTY_BUSINESS);
-  const [editingBusiness, setEditingBusiness] = useState(false);
   const [invoices, setInvoices] = useState<LibraryEntry[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [unindexed, setUnindexed] = useState<string[]>([]);
@@ -75,45 +49,38 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
   useEffect(() => {
     fetch("/api/local/settings")
       .then((r) => r.json())
-      .then((d) => {
-        setRemote({ url: d.remoteUrl, configured: d.remoteConfigured });
-        if (d.business) setBusiness(d.business);
-      })
+      .then((d) => setRemote({ url: d.remoteUrl, configured: d.remoteConfigured }))
       .catch(() => setRemote({ url: null, configured: false }));
   }, []);
 
   // Auto-sync: once on load and every 5 minutes while the app is open.
   // Silent unless something was pulled or something went wrong.
   useEffect(() => {
-    if (!remote?.configured || picking || !invoiceDir) return;
+    if (!remote?.configured || !invoiceDir) return;
     syncNow(true);
     const id = setInterval(() => syncNow(true), 5 * 60 * 1000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remote?.configured, invoiceDir, picking]);
+  }, [remote?.configured, invoiceDir]);
 
-  if (picking || !invoiceDir) {
+  // First run: no folder chosen yet.
+  if (!invoiceDir) {
     return (
-      <main className="mx-auto max-w-2xl px-4 py-8">
-        <Logo className="mb-6" />
-        <h1 className="text-2xl font-semibold text-ink">
-          {invoiceDir ? "Change invoice folder" : "Choose your invoice folder"}
-        </h1>
+      <>
+        <h1 className="text-2xl font-semibold text-ink">Choose your invoice folder</h1>
         <p className="mt-1 text-sm text-dim">
           Invoices are organized as PDF files inside this folder. Pick one
-          inside Google Drive or Dropbox if you want your own cloud backup.
+          inside Google Drive or iCloud if you want your own cloud backup.
         </p>
         <FolderPicker
-          initialPath={invoiceDir}
+          initialPath={null}
           onChosen={(dir) => {
             setInvoiceDir(dir);
-            setPicking(false);
             setFeedback({ tone: "success", message: `Invoice folder set to ${dir}` });
             load();
           }}
-          onCancel={invoiceDir ? () => setPicking(false) : undefined}
         />
-      </main>
+      </>
     );
   }
 
@@ -139,8 +106,7 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
           message: parts.join(" "),
         });
       }
-      if (data.pulled > 0) load();
-      else if (!auto) load();
+      if (data.pulled > 0 || !auto) load();
     } catch {
       if (!auto) setFeedback({ tone: "error", message: "Network error" });
     } finally {
@@ -149,52 +115,14 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
   }
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-8">
-      <Logo className="mb-6" />
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-ink">Invoice library</h1>
-          <p className="mt-1 break-all text-xs text-muted">
-            {invoiceDir}
-            <button
-              type="button"
-              onClick={() => setPicking(true)}
-              className="ml-2 font-medium text-accent hover:text-accent-strong"
-            >
-              Change
-            </button>
-          </p>
-          <p className="mt-0.5 break-all text-xs text-muted">
-            {remote?.configured ? (
-              <>
-                Syncing from {remote.url}
-                <button
-                  type="button"
-                  onClick={() => setEditingServer(true)}
-                  className="ml-2 font-medium text-accent hover:text-accent-strong"
-                >
-                  Change
-                </button>
-              </>
-            ) : remote ? (
-              "Server sync not set up"
-            ) : null}
-          </p>
-          <p className="mt-0.5 break-all text-xs text-muted">
-            {business.name ? `Invoicing as ${business.name}` : "Business details not set"}
-            <button
-              type="button"
-              onClick={() => setEditingBusiness(true)}
-              className="ml-2 font-medium text-accent hover:text-accent-strong"
-            >
-              {business.name ? "Change" : "Set up"}
-            </button>
-          </p>
-        </div>
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold text-ink">Invoices</h1>
         <Button
           onClick={() => syncNow()}
           disabled={syncing || !remote?.configured}
           className="w-auto px-5 py-2.5 text-sm"
+          title={remote?.configured ? undefined : "Connect a server in Settings to sync"}
         >
           {syncing ? "Syncing…" : "Sync now"}
         </Button>
@@ -206,34 +134,18 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
         </div>
       ) : null}
 
-      {remote && (!remote.configured || editingServer) ? (
-        <ServerCard
-          initialUrl={remote.url}
-          onSaved={(r) => {
-            setRemote(r);
-            setEditingServer(false);
-            setFeedback({ tone: "success", message: "Server connection saved." });
-          }}
-          onCancel={remote.configured ? () => setEditingServer(false) : undefined}
-        />
+      {remote && !remote.configured ? (
+        <div className="mt-4">
+          <Banner tone="info">
+            Server sync isn&apos;t set up — invoices from your links won&apos;t
+            appear until you connect in{" "}
+            <Link href="/library/settings" className="font-medium underline">
+              Settings
+            </Link>
+            .
+          </Banner>
+        </div>
       ) : null}
-
-      {editingBusiness ? (
-        <BusinessCard
-          initial={business}
-          onSaved={(b) => {
-            setBusiness(b);
-            setEditingBusiness(false);
-            setFeedback({ tone: "success", message: "Business details saved." });
-          }}
-          onCancel={() => setEditingBusiness(false)}
-        />
-      ) : null}
-
-      <div className="flex flex-wrap items-start gap-2">
-        <LinkForm business={business} remoteConfigured={!!remote?.configured} />
-        <OutboundForm contacts={contacts} onCreated={load} />
-      </div>
 
       {unindexed.length > 0 ? (
         <UnindexedSection files={unindexed} onIndexed={load} />
@@ -268,9 +180,7 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
         onFilter={setContactFilter}
         onChanged={load}
       />
-
-      <UploadCard onUploaded={load} />
-    </main>
+    </>
   );
 }
 
@@ -305,7 +215,7 @@ function FilterBar({
   const selectClasses =
     "rounded-lg border border-hair bg-elev px-2.5 py-1.5 text-sm text-ink outline-none focus:border-accent";
   return (
-    <div className="mt-8 flex flex-wrap items-center gap-2">
+    <div className="mt-6 flex flex-wrap items-center gap-2">
       <div className="flex items-center gap-1 rounded-xl border border-hair p-1">
         {tab("all", "All")}
         {tab("inbound", "Inbound")}
@@ -336,312 +246,6 @@ function FilterBar({
   );
 }
 
-function ServerCard({
-  initialUrl,
-  onSaved,
-  onCancel,
-}: {
-  initialUrl: string | null;
-  onSaved: (remote: RemoteInfo) => void;
-  onCancel?: () => void;
-}) {
-  const [url, setUrl] = useState(initialUrl ?? DEFAULT_SERVER_URL);
-  const [token, setToken] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/local/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ remoteUrl: url, remoteToken: token }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(data.error ?? "Couldn't save");
-        return;
-      }
-      onSaved({ url: data.remoteUrl, configured: data.remoteConfigured });
-    } catch {
-      setError("Network error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Card className="mt-6 p-5">
-      <h2 className="text-lg font-semibold text-ink">Connect to your server</h2>
-      <p className="mt-1 text-sm text-dim">
-        Invoices submitted through your links are pulled from the website into
-        this library. Generate a sync token on the website under{" "}
-        <span className="font-medium text-ink">/admin → Local sync</span> and
-        paste it here.
-      </p>
-      <form onSubmit={save} className="mt-4 space-y-4" noValidate>
-        <div>
-          <Label htmlFor="server-url">Server URL</Label>
-          <Input
-            id="server-url"
-            type="url"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder={DEFAULT_SERVER_URL}
-          />
-        </div>
-        <div>
-          <Label htmlFor="server-token">Sync token</Label>
-          <Input
-            id="server-token"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder="mis_…"
-            className="font-mono text-sm"
-            autoComplete="off"
-          />
-        </div>
-        {error ? <Banner tone="error">{error}</Banner> : null}
-        <div className="flex items-center gap-2">
-          <Button
-            type="submit"
-            disabled={busy || !url.trim() || !token.trim()}
-            className="w-auto px-5 py-2.5 text-sm"
-          >
-            {busy ? "Saving…" : "Save connection"}
-          </Button>
-          {onCancel ? (
-            <Button
-              type="button"
-              onClick={onCancel}
-              variant="ghost"
-              className="w-auto px-4 py-2.5 text-sm"
-            >
-              Cancel
-            </Button>
-          ) : null}
-        </div>
-      </form>
-    </Card>
-  );
-}
-
-function FolderPicker({
-  initialPath,
-  onChosen,
-  onCancel,
-}: {
-  initialPath: string | null;
-  onChosen: (dir: string) => void;
-  onCancel?: () => void;
-}) {
-  const [current, setCurrent] = useState<string | null>(initialPath);
-  const [parent, setParent] = useState<string | null>(null);
-  const [dirs, setDirs] = useState<string[]>([]);
-  const [home, setHome] = useState<string | null>(null);
-  const [typed, setTyped] = useState(initialPath ?? "");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const browse = useCallback((path?: string, attempt = 0) => {
-    const q = path ? `?path=${encodeURIComponent(path)}` : "";
-    fetch(`/api/local/browse${q}`)
-      .then(async (r) => {
-        const d = await r.json();
-        if (!r.ok) {
-          setError(d.error ?? "Can't open that folder");
-          return;
-        }
-        setError(null);
-        setCurrent(d.path);
-        setTyped(d.path);
-        setParent(d.parent);
-        setHome(d.home);
-        setDirs(d.dirs ?? []);
-      })
-      .catch(() => {
-        // A dev-server cold start can drop the first fetch — retry briefly
-        // instead of leaving the folder list empty.
-        if (attempt < 5) setTimeout(() => browse(path, attempt + 1), 800);
-        else setError("Couldn't load the folder list — check the app is still running.");
-      });
-  }, []);
-
-  useEffect(() => {
-    browse(initialPath ?? undefined);
-  }, [browse, initialPath]);
-
-  async function saveFolder(p: string) {
-    if (!p.trim()) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/local/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: p }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(data.error ?? "Couldn't use that folder");
-        return;
-      }
-      onChosen(data.invoiceDir);
-    } catch {
-      setError("Network error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // Opens the OS's real Finder/Explorer folder dialog. Inside the desktop
-  // app this goes through Electron's dialog API (no extra permissions);
-  // in a plain browser it falls back to a server-spawned dialog — local mode
-  // runs on this machine either way. Picking a folder saves it.
-  async function browseNative() {
-    // Breadcrumbs kept on window so a debugger can read them after the fact.
-    const log = (msg: string) => {
-      console.log("[browse]", msg);
-      const w = window as unknown as { __browseLog?: string[] };
-      (w.__browseLog = w.__browseLog ?? []).push(`${new Date().toISOString()} ${msg}`);
-    };
-    log("clicked");
-    setBusy(true);
-    setError(null);
-    try {
-      const electronPick = (
-        window as unknown as {
-          wondervoice?: { pickFolder: () => Promise<string | null> };
-        }
-      ).wondervoice?.pickFolder;
-      log(`electron bridge: ${electronPick ? "available" : "absent"}`);
-      if (electronPick) {
-        const picked = await electronPick();
-        log(`dialog returned: ${picked}`);
-        if (picked) await saveFolder(picked);
-        return;
-      }
-      log("falling back to server-side dialog");
-
-      const res = await fetch("/api/local/pick-folder", { method: "POST" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(data.error ?? "Couldn't open the system folder dialog");
-        return;
-      }
-      if (data.canceled) return;
-      await saveFolder(data.path);
-    } catch (err) {
-      console.error("[browse] failed:", err);
-      setError(
-        err instanceof Error && err.message
-          ? `Folder dialog failed: ${err.message}`
-          : "Folder dialog failed — try typing the path below instead.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Card className="mt-5 p-5">
-      <Button onClick={browseNative} disabled={busy} className="w-auto px-5 py-2.5 text-sm">
-        {busy ? "Waiting…" : "Browse for a folder…"}
-      </Button>
-      <p className="mt-2 text-xs text-muted">
-        Opens your system&apos;s folder picker (check your desktop if you
-        don&apos;t see it). Or type a path / navigate below.
-      </p>
-
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          browse(typed);
-        }}
-        className="mt-4 flex items-center gap-2"
-      >
-        <Input
-          value={typed}
-          onChange={(e) => setTyped(e.target.value)}
-          placeholder="/Users/you/Google Drive/Invoices  (or ~/Invoices)"
-          className="font-mono text-sm"
-        />
-        <Button type="submit" variant="secondary" className="w-auto px-4 py-2.5 text-sm">
-          Go
-        </Button>
-      </form>
-      <p className="mt-2 text-xs text-muted">
-        New folders are created for you.
-      </p>
-
-      <div className="mt-3 flex items-center gap-2 text-sm">
-        <button
-          type="button"
-          onClick={() => parent && browse(parent)}
-          disabled={!parent}
-          className="rounded-lg px-2.5 py-1.5 font-medium text-dim hover:bg-elev hover:text-ink disabled:opacity-40"
-        >
-          ↑ Up
-        </button>
-        <button
-          type="button"
-          onClick={() => home && browse(home)}
-          disabled={!home}
-          className="rounded-lg px-2.5 py-1.5 font-medium text-dim hover:bg-elev hover:text-ink disabled:opacity-40"
-        >
-          ⌂ Home
-        </button>
-        <span className="min-w-0 truncate text-xs text-muted">{current}</span>
-      </div>
-
-      <div className="mt-2 max-h-64 overflow-y-auto rounded-[10px] border border-hair">
-        {dirs.length === 0 ? (
-          <p className="px-3 py-3 text-sm text-slate-400">No subfolders here.</p>
-        ) : (
-          <ul className="divide-y divide-slate-100">
-            {dirs.map((d) => (
-              <li key={d}>
-                <button
-                  type="button"
-                  onClick={() => current && browse(`${current}/${d}`)}
-                  className="block w-full truncate px-3 py-2 text-left text-sm text-slate-700 hover:bg-elev"
-                >
-                  📁 {d}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {error ? (
-        <div className="mt-3">
-          <Banner tone="error">{error}</Banner>
-        </div>
-      ) : null}
-
-      <div className="mt-4 flex items-center gap-2">
-        <Button
-          onClick={() => saveFolder(typed)}
-          disabled={busy || !typed.trim()}
-          variant="secondary"
-          className="w-auto px-5 py-2.5 text-sm"
-        >
-          {busy ? "Saving…" : "Use this folder"}
-        </Button>
-        {onCancel ? (
-          <Button onClick={onCancel} variant="ghost" className="w-auto px-4 py-2.5 text-sm">
-            Cancel
-          </Button>
-        ) : null}
-      </div>
-    </Card>
-  );
-}
-
 function InvoiceList({
   invoices,
   filtered,
@@ -654,9 +258,18 @@ function InvoiceList({
   if (invoices.length === 0) {
     return (
       <Card className="mt-6 p-6 text-sm text-dim">
-        {filtered
-          ? "No invoices match the current filters."
-          : "No invoices yet. Press “Sync now” to pull invoices submitted through your links, or upload one below."}
+        {filtered ? (
+          "No invoices match the current filters."
+        ) : (
+          <>
+            No invoices yet. Press &quot;Sync now&quot; to pull invoices
+            submitted through your links, or{" "}
+            <Link href="/library/create" className="font-medium text-accent">
+              create one
+            </Link>
+            .
+          </>
+        )}
       </Card>
     );
   }
@@ -670,7 +283,7 @@ function InvoiceList({
   const years = [...byYear.keys()].sort((a, b) => b.localeCompare(a));
 
   return (
-    <section className="mt-8 space-y-6">
+    <section className="mt-6 space-y-6">
       {years.map((year) => (
         <div key={year}>
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">
@@ -787,16 +400,14 @@ function InvoiceRow({
                   })}
                 </span>
                 {invoice.receiptPath ? (
-                  <>
-                    <a
-                      href={`/api/local/invoices/${invoice.id}/receipt`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className={`${flagButton} text-accent hover:bg-elev`}
-                    >
-                      View receipt
-                    </a>
-                  </>
+                  <a
+                    href={`/api/local/invoices/${invoice.id}/receipt`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={`${flagButton} text-accent hover:bg-elev`}
+                  >
+                    View receipt
+                  </a>
                 ) : (
                   <button
                     type="button"
@@ -932,152 +543,6 @@ function UnindexedSection({
           </li>
         ))}
       </ul>
-    </Card>
-  );
-}
-
-const EMPTY_UPLOAD = {
-  eventName: "",
-  eventDate: "",
-  bandmateName: "",
-  contactEmail: "",
-  invoiceNumber: "",
-  amount: "",
-  notes: "",
-};
-
-function UploadCard({ onUploaded }: { onUploaded: () => void }) {
-  const [form, setForm] = useState(EMPTY_UPLOAD);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  function update<K extends keyof typeof EMPTY_UPLOAD>(key: K, value: string) {
-    setForm((f) => ({ ...f, [key]: value }));
-  }
-
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setSuccess(false);
-
-    const file = fileRef.current?.files?.[0];
-    if (!file) {
-      setError("Choose a PDF file to upload.");
-      return;
-    }
-
-    const body = new FormData();
-    body.set("file", file);
-    for (const [k, v] of Object.entries(form)) body.set(k, v);
-
-    setLoading(true);
-    try {
-      const res = await fetch("/api/local/invoices", { method: "POST", body });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(data.error ?? "Upload failed");
-        return;
-      }
-      setSuccess(true);
-      setForm(EMPTY_UPLOAD);
-      if (fileRef.current) fileRef.current.value = "";
-      onUploaded();
-    } catch {
-      setError("Network error");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <Card className="mt-8 p-5">
-      <h2 className="text-lg font-semibold text-ink">Add an invoice manually</h2>
-      <p className="mt-1 text-sm text-dim">
-        Drop in any invoice PDF — it gets filed into your folder and indexed.
-        All details are optional.
-      </p>
-      <form onSubmit={onSubmit} className="mt-4 space-y-4" noValidate>
-        <div>
-          <Label htmlFor="upload-file">PDF file</Label>
-          <input
-            id="upload-file"
-            ref={fileRef}
-            type="file"
-            accept="application/pdf,.pdf"
-            className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-elev file:px-3 file:py-2 file:text-sm file:font-medium file:text-ink"
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <Label>Event name</Label>
-            <Input
-              value={form.eventName}
-              onChange={(e) => update("eventName", e.target.value)}
-            />
-          </div>
-          <div>
-            <Label>Event date</Label>
-            <Input
-              type="date"
-              value={form.eventDate}
-              onChange={(e) => update("eventDate", e.target.value)}
-            />
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <Label>Who it&apos;s from</Label>
-            <Input
-              value={form.bandmateName}
-              onChange={(e) => update("bandmateName", e.target.value)}
-            />
-          </div>
-          <div>
-            <Label hint="(links a contact)">Their email</Label>
-            <Input
-              type="email"
-              value={form.contactEmail}
-              onChange={(e) => update("contactEmail", e.target.value)}
-            />
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <Label>Invoice #</Label>
-            <Input
-              value={form.invoiceNumber}
-              onChange={(e) => update("invoiceNumber", e.target.value)}
-            />
-          </div>
-          <div>
-            <Label>Amount</Label>
-            <Input
-              type="number"
-              inputMode="decimal"
-              step="0.01"
-              min="0"
-              value={form.amount}
-              onChange={(e) => update("amount", e.target.value)}
-              placeholder="0.00"
-            />
-          </div>
-        </div>
-        <div>
-          <Label>Notes</Label>
-          <Textarea
-            rows={2}
-            value={form.notes}
-            onChange={(e) => update("notes", e.target.value)}
-          />
-        </div>
-        {error ? <Banner tone="error">{error}</Banner> : null}
-        {success ? <Banner tone="success">Invoice added to your library.</Banner> : null}
-        <Button type="submit" disabled={loading}>
-          {loading ? "Adding…" : "Add invoice"}
-        </Button>
-      </form>
     </Card>
   );
 }

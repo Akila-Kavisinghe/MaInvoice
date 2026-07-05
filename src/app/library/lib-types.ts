@@ -35,3 +35,8 @@ export interface BusinessInfo {
   phone: string;
   taxNumber: string;
 }
+
+export interface RemoteInfo {
+  url: string | null;
+  configured: boolean;
+}

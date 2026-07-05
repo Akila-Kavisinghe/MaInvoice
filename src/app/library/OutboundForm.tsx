@@ -32,7 +32,6 @@ export default function OutboundForm({
   contacts: Contact[];
   onCreated: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<Created | null>(null);
@@ -88,34 +87,14 @@ export default function OutboundForm({
     }
   }
 
-  if (!open) {
-    return (
-      <div className="mt-6">
-        <Button onClick={() => setOpen(true)} className="w-auto px-5 py-2.5 text-sm">
-          New outbound invoice
-        </Button>
-        {created ? <CreatedBanner created={created} /> : null}
-      </div>
-    );
-  }
-
   return (
     <Card className="mt-6 p-5">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-ink">New outbound invoice</h2>
-          <p className="mt-1 text-sm text-dim">
-            An invoice from your business to a client — the PDF is generated and
-            filed under Outbound.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          className="rounded-lg px-2.5 py-1.5 text-sm font-medium text-dim hover:bg-elev hover:text-ink"
-        >
-          Close
-        </button>
+      <div>
+        <h2 className="text-lg font-semibold text-ink">New outbound invoice</h2>
+        <p className="mt-1 text-sm text-dim">
+          An invoice from your business to a client — the PDF is generated and
+          filed under Outbound.
+        </p>
       </div>
 
       <form onSubmit={onSubmit} className="mt-4 space-y-4" noValidate>

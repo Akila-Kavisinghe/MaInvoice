@@ -37,7 +37,6 @@ export default function LinkForm({
   business: BusinessInfo;
   remoteConfigured: boolean;
 }) {
-  const [open, setOpen] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [links, setLinks] = useState<LinkRow[] | null>(null);
   const [created, setCreated] = useState<string | null>(null);
@@ -53,8 +52,8 @@ export default function LinkForm({
   }, []);
 
   useEffect(() => {
-    if (open) loadLinks();
-  }, [open, loadLinks]);
+    if (remoteConfigured) loadLinks();
+  }, [remoteConfigured, loadLinks]);
 
   function update<K extends keyof typeof EMPTY>(key: K, value: string | boolean) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -119,43 +118,26 @@ export default function LinkForm({
     }
   }
 
-  if (!open) {
+  if (!remoteConfigured) {
     return (
-      <div className="mt-3">
-        <Button
-          onClick={() => setOpen(true)}
-          variant="secondary"
-          disabled={!remoteConfigured}
-          className="w-auto px-5 py-2.5 text-sm"
-        >
-          New invoice link
-        </Button>
-        {!remoteConfigured ? (
-          <p className="mt-1 text-xs text-muted">
-            Connect to your server first to create links.
-          </p>
-        ) : null}
-      </div>
+      <Card className="mt-6 p-5">
+        <h2 className="text-lg font-semibold text-ink">New invoice link</h2>
+        <Banner tone="info">
+          Connect to your server first (Settings → Server connection) — links
+          are created there so bandmates can reach them.
+        </Banner>
+      </Card>
     );
   }
 
   return (
     <Card className="mt-6 p-5">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-ink">New invoice link</h2>
-          <p className="mt-1 text-sm text-dim">
-            Created on your server; send it to a bandmate so they can submit
-            their invoice. Your business details are the &quot;Bill to&quot;.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          className="rounded-lg px-2.5 py-1.5 text-sm font-medium text-dim hover:bg-elev hover:text-ink"
-        >
-          Close
-        </button>
+      <div>
+        <h2 className="text-lg font-semibold text-ink">New invoice link</h2>
+        <p className="mt-1 text-sm text-dim">
+          Created on your server; send it to a bandmate so they can submit
+          their invoice. Your business details are the &quot;Bill to&quot;.
+        </p>
       </div>
 
       {created ? (
