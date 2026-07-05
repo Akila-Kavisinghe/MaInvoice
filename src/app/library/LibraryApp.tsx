@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Banner, Button, Card } from "@/components/ui";
 import { formatDate, formatMoney } from "@/lib/format";
+import { TAX_CATEGORIES, taxCategoryById } from "@/lib/t2125";
 import type { Contact, LibraryEntry, RemoteInfo } from "./lib-types";
 import ContactsCard from "./ContactsCard";
 import FolderPicker from "./FolderPicker";
@@ -325,7 +326,11 @@ function InvoiceRow({
     }
   }
 
-  async function patch(body: { emailReceived?: boolean; paid?: boolean }) {
+  async function patch(body: {
+    emailReceived?: boolean;
+    paid?: boolean;
+    taxCategory?: string | null;
+  }) {
     setBusy(true);
     try {
       const res = await fetch(`/api/local/invoices/${invoice.id}`, {
@@ -461,6 +466,32 @@ function InvoiceRow({
               >
                 {invoice.emailReceived ? "Emailed ✓" : "Mark emailed"}
               </button>
+            ) : null}
+            {inbound ? (
+              <select
+                value={invoice.taxCategory ?? ""}
+                disabled={busy}
+                onChange={(e) => patch({ taxCategory: e.target.value || null })}
+                title="T2125 tax category"
+                className={`rounded-lg border border-hair bg-elev px-1.5 py-1 text-xs outline-none focus:border-accent ${
+                  invoice.taxCategory ? "text-ink" : "text-danger"
+                }`}
+              >
+                <option value="">Tax: uncategorized</option>
+                {TAX_CATEGORIES.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            {inbound && taxCategoryById(invoice.taxCategory)?.capital ? (
+              <span
+                className="rounded-lg bg-danger/10 px-2 py-1 text-xs font-medium text-danger"
+                title="Equipment with lasting value is usually depreciated (CCA), not fully expensed in the purchase year."
+              >
+                Possible capital asset
+              </span>
             ) : null}
           </div>
           <input

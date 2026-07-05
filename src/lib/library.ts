@@ -45,6 +45,13 @@ export interface LibraryEntry {
   receiptPath?: string;
   /** Set when a receipt is attached or the row is manually marked paid. */
   paidAt?: string; // ISO timestamp
+  /**
+   * T2125 reporting category (expense-side entries only — outbound invoices
+   * are income), assigned manually by the user. See src/lib/t2125.ts.
+   * "capital-assets" marks purchases that may need CCA treatment instead of
+   * full expensing.
+   */
+  taxCategory?: string;
   addedAt: string; // ISO timestamp
 }
 
@@ -225,6 +232,8 @@ export async function addInvoice(
     const relPath = await uniquePath(relDir, base, ".pdf");
     await fs.writeFile(resolveSafe(relPath), pdf);
 
+    // Tax categories are assigned manually — new entries start uncategorized
+    // and show up in the Taxes page's to-do banner until the user labels them.
     const entry: LibraryEntry = {
       id: crypto.randomUUID(),
       relPath,
@@ -274,7 +283,7 @@ export async function indexFile(
 /** Update mutable flags/fields on an entry. Returns the updated entry. */
 export async function updateInvoice(
   id: string,
-  patch: { emailReceived?: boolean; paid?: boolean },
+  patch: { emailReceived?: boolean; paid?: boolean; taxCategory?: string | null },
 ): Promise<LibraryEntry | null> {
   return chained(async () => {
     const manifest = await readManifestRaw();
@@ -286,6 +295,9 @@ export async function updateInvoice(
     if (typeof patch.paid === "boolean") {
       // Marking unpaid clears the timestamp but keeps any receipt file.
       entry.paidAt = patch.paid ? new Date().toISOString() : undefined;
+    }
+    if (patch.taxCategory !== undefined) {
+      entry.taxCategory = patch.taxCategory ?? undefined;
     }
     await writeManifest(manifest);
     return entry;

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TAX_CATEGORY_IDS } from "./t2125";
 
 const trimmed = z.string().trim();
 const optionalText = trimmed.max(2000).optional().or(z.literal("").transform(() => undefined));
@@ -130,12 +131,21 @@ export const outboundSchema = z.object({
 
 export type OutboundInput = z.infer<typeof outboundSchema>;
 
-/** Local library → toggle flags on an invoice row. */
+/** Local library → toggle flags / set the T2125 category on an invoice row. */
 export const invoicePatchSchema = z
   .object({
     emailReceived: z.boolean().optional(),
     paid: z.boolean().optional(),
+    taxCategory: z
+      .string()
+      .refine((v) => TAX_CATEGORY_IDS.includes(v), "Unknown category")
+      .nullable()
+      .optional(),
   })
-  .refine((d) => d.emailReceived !== undefined || d.paid !== undefined, {
-    message: "Nothing to update",
-  });
+  .refine(
+    (d) =>
+      d.emailReceived !== undefined ||
+      d.paid !== undefined ||
+      d.taxCategory !== undefined,
+    { message: "Nothing to update" },
+  );

@@ -16,6 +16,7 @@ export interface LibraryEntry {
   emailReceived?: boolean;
   receiptPath?: string;
   paidAt?: string;
+  taxCategory?: string;
   addedAt: string;
 }
 
