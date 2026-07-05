@@ -3,6 +3,7 @@ import { sameOrigin } from "@/lib/auth";
 import { localModeUnavailable } from "@/lib/local-mode";
 import { resolveRemoteSync } from "@/lib/local-settings";
 import { addInvoice, hasInvoiceDir } from "@/lib/library";
+import { upsertContact } from "@/lib/contacts";
 import type { PendingInvoiceMeta } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -62,13 +63,23 @@ export async function POST(req: Request) {
       if (!pdfRes.ok) throw new Error(`download failed (${pdfRes.status})`);
       const pdf = Buffer.from(await pdfRes.arrayBuffer());
 
-      await addInvoice(pdf, meta.filename, "sync", {
+      await addInvoice(pdf, meta.filename, "sync", "inbound", {
         eventName: meta.eventName,
         eventDate: meta.eventDate,
         bandmateName: meta.bandmateName,
         invoiceNumber: meta.invoiceNumber,
         amount: meta.amount,
+        contactEmail: meta.bandmateEmail,
+        contactName: meta.bandmateName,
       });
+      // New sender → contact card appears automatically.
+      if (meta.bandmateEmail) {
+        try {
+          await upsertContact({ email: meta.bandmateEmail, name: meta.bandmateName });
+        } catch (err) {
+          console.error("contact upsert failed for", meta.id, err);
+        }
+      }
       written.push(meta.id);
     } catch (err) {
       console.error("sync pull failed for", meta.id, err);

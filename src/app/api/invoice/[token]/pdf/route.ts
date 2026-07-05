@@ -110,6 +110,7 @@ export async function POST(
         eventName: gig.eventName,
         eventDate: gig.eventDate,
         bandmateName: input.bandmateName,
+        bandmateEmail: input.bandmateEmail,
         invoiceNumber,
         amount: input.amount,
         filename,

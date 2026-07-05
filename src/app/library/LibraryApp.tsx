@@ -11,19 +11,11 @@ import {
   Textarea,
 } from "@/components/ui";
 import { formatDate, formatMoney } from "@/lib/format";
-
-interface LibraryEntry {
-  id: string;
-  relPath: string;
-  source: "sync" | "upload";
-  eventName?: string;
-  eventDate?: string;
-  bandmateName?: string;
-  invoiceNumber?: string;
-  amount?: number;
-  notes?: string;
-  addedAt: string;
-}
+import type { BusinessInfo, Contact, LibraryEntry } from "./lib-types";
+import OutboundForm from "./OutboundForm";
+import ContactsCard from "./ContactsCard";
+import BusinessCard from "./BusinessCard";
+import LinkForm from "./LinkForm";
 
 interface Feedback {
   tone: "success" | "error" | "info";
@@ -35,17 +27,34 @@ interface RemoteInfo {
   configured: boolean;
 }
 
+type DirectionFilter = "all" | "inbound" | "outbound";
+type PaidFilter = "all" | "unpaid" | "paid";
+
 const DEFAULT_SERVER_URL = "https://mainvoice-sigma.vercel.app";
+const EMPTY_BUSINESS: BusinessInfo = {
+  name: "",
+  email: "",
+  address: "",
+  phone: "",
+  taxNumber: "",
+};
 
 export default function LibraryApp({ initialDir }: { initialDir: string | null }) {
   const [invoiceDir, setInvoiceDir] = useState<string | null>(initialDir);
   const [picking, setPicking] = useState(initialDir === null);
   const [remote, setRemote] = useState<RemoteInfo | null>(null); // null = loading
   const [editingServer, setEditingServer] = useState(false);
+  const [business, setBusiness] = useState<BusinessInfo>(EMPTY_BUSINESS);
+  const [editingBusiness, setEditingBusiness] = useState(false);
   const [invoices, setInvoices] = useState<LibraryEntry[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [unindexed, setUnindexed] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [syncing, setSyncing] = useState(false);
+  // Filters
+  const [direction, setDirection] = useState<DirectionFilter>("all");
+  const [contactFilter, setContactFilter] = useState<string | null>(null);
+  const [paidFilter, setPaidFilter] = useState<PaidFilter>("all");
 
   const load = useCallback(() => {
     fetch("/api/local/invoices")
@@ -55,6 +64,10 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
         setUnindexed(d.unindexed ?? []);
       })
       .catch(() => {});
+    fetch("/api/local/contacts")
+      .then((r) => (r.ok ? r.json() : { contacts: [] }))
+      .then((d) => setContacts(d.contacts ?? []))
+      .catch(() => {});
   }, []);
 
   useEffect(load, [load]);
@@ -62,7 +75,10 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
   useEffect(() => {
     fetch("/api/local/settings")
       .then((r) => r.json())
-      .then((d) => setRemote({ url: d.remoteUrl, configured: d.remoteConfigured }))
+      .then((d) => {
+        setRemote({ url: d.remoteUrl, configured: d.remoteConfigured });
+        if (d.business) setBusiness(d.business);
+      })
       .catch(() => setRemote({ url: null, configured: false }));
   }, []);
 
@@ -164,6 +180,16 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
               "Server sync not set up"
             ) : null}
           </p>
+          <p className="mt-0.5 break-all text-xs text-muted">
+            {business.name ? `Invoicing as ${business.name}` : "Business details not set"}
+            <button
+              type="button"
+              onClick={() => setEditingBusiness(true)}
+              className="ml-2 font-medium text-accent hover:text-accent-strong"
+            >
+              {business.name ? "Change" : "Set up"}
+            </button>
+          </p>
         </div>
         <Button
           onClick={() => syncNow()}
@@ -192,14 +218,121 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
         />
       ) : null}
 
+      {editingBusiness ? (
+        <BusinessCard
+          initial={business}
+          onSaved={(b) => {
+            setBusiness(b);
+            setEditingBusiness(false);
+            setFeedback({ tone: "success", message: "Business details saved." });
+          }}
+          onCancel={() => setEditingBusiness(false)}
+        />
+      ) : null}
+
+      <div className="flex flex-wrap items-start gap-2">
+        <LinkForm business={business} remoteConfigured={!!remote?.configured} />
+        <OutboundForm contacts={contacts} onCreated={load} />
+      </div>
+
       {unindexed.length > 0 ? (
         <UnindexedSection files={unindexed} onIndexed={load} />
       ) : null}
 
-      <InvoiceList invoices={invoices} onChanged={load} />
+      <FilterBar
+        direction={direction}
+        onDirection={setDirection}
+        paidFilter={paidFilter}
+        onPaid={setPaidFilter}
+        contactFilter={contactFilter}
+        onContact={setContactFilter}
+        contacts={contacts}
+      />
+
+      <InvoiceList
+        invoices={invoices.filter(
+          (inv) =>
+            (direction === "all" || inv.direction === direction) &&
+            (paidFilter === "all" ||
+              (paidFilter === "paid" ? !!inv.paidAt : !inv.paidAt)) &&
+            (!contactFilter || inv.contactEmail === contactFilter),
+        )}
+        filtered={direction !== "all" || paidFilter !== "all" || !!contactFilter}
+        onChanged={load}
+      />
+
+      <ContactsCard
+        contacts={contacts}
+        invoices={invoices}
+        activeEmail={contactFilter}
+        onFilter={setContactFilter}
+        onChanged={load}
+      />
 
       <UploadCard onUploaded={load} />
     </main>
+  );
+}
+
+function FilterBar({
+  direction,
+  onDirection,
+  paidFilter,
+  onPaid,
+  contactFilter,
+  onContact,
+  contacts,
+}: {
+  direction: DirectionFilter;
+  onDirection: (d: DirectionFilter) => void;
+  paidFilter: PaidFilter;
+  onPaid: (p: PaidFilter) => void;
+  contactFilter: string | null;
+  onContact: (email: string | null) => void;
+  contacts: Contact[];
+}) {
+  const tab = (value: DirectionFilter, label: string) => (
+    <button
+      type="button"
+      onClick={() => onDirection(value)}
+      className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+        direction === value ? "bg-accent/10 text-accent" : "text-dim hover:bg-elev hover:text-ink"
+      }`}
+    >
+      {label}
+    </button>
+  );
+  const selectClasses =
+    "rounded-lg border border-hair bg-elev px-2.5 py-1.5 text-sm text-ink outline-none focus:border-accent";
+  return (
+    <div className="mt-8 flex flex-wrap items-center gap-2">
+      <div className="flex items-center gap-1 rounded-xl border border-hair p-1">
+        {tab("all", "All")}
+        {tab("inbound", "Inbound")}
+        {tab("outbound", "Outbound")}
+      </div>
+      <select
+        value={paidFilter}
+        onChange={(e) => onPaid(e.target.value as PaidFilter)}
+        className={selectClasses}
+      >
+        <option value="all">Any status</option>
+        <option value="unpaid">Unpaid</option>
+        <option value="paid">Paid</option>
+      </select>
+      <select
+        value={contactFilter ?? ""}
+        onChange={(e) => onContact(e.target.value || null)}
+        className={selectClasses}
+      >
+        <option value="">All contacts</option>
+        {contacts.map((c) => (
+          <option key={c.email} value={c.email}>
+            {c.name}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }
 
@@ -511,16 +644,19 @@ function FolderPicker({
 
 function InvoiceList({
   invoices,
+  filtered,
   onChanged,
 }: {
   invoices: LibraryEntry[];
+  filtered: boolean;
   onChanged: () => void;
 }) {
   if (invoices.length === 0) {
     return (
       <Card className="mt-6 p-6 text-sm text-dim">
-        No invoices yet. Press “Sync now” to pull invoices submitted through
-        your links, or upload one below.
+        {filtered
+          ? "No invoices match the current filters."
+          : "No invoices yet. Press “Sync now” to pull invoices submitted through your links, or upload one below."}
       </Card>
     );
   }
@@ -559,7 +695,9 @@ function InvoiceRow({
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const receiptRef = useRef<HTMLInputElement>(null);
   const filename = invoice.relPath.split("/").pop() ?? invoice.relPath;
+  const inbound = invoice.direction !== "outbound";
 
   async function remove() {
     if (!window.confirm(`Delete "${filename}" from your invoice folder?`)) return;
@@ -574,16 +712,60 @@ function InvoiceRow({
     }
   }
 
+  async function patch(body: { emailReceived?: boolean; paid?: boolean }) {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/local/invoices/${invoice.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function uploadReceipt(file: File) {
+    setBusy(true);
+    try {
+      const body = new FormData();
+      body.set("file", file);
+      const res = await fetch(`/api/local/invoices/${invoice.id}/receipt`, {
+        method: "POST",
+        body,
+      });
+      if (res.ok) onChanged();
+      else {
+        const data = await res.json().catch(() => ({}));
+        window.alert(data.error ?? "Receipt upload failed");
+      }
+    } finally {
+      setBusy(false);
+      if (receiptRef.current) receiptRef.current.value = "";
+    }
+  }
+
+  const flagButton =
+    "rounded-lg px-2 py-1 text-xs font-medium disabled:opacity-50";
+
   return (
     <Card className="p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate font-semibold text-slate-800">
+            <span
+              className={`mr-2 inline-block rounded px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wide ${
+                inbound ? "bg-accent/10 text-accent" : "bg-success/10 text-success"
+              }`}
+            >
+              {inbound ? "In" : "Out"}
+            </span>
             {invoice.eventName || filename}
           </p>
           <p className="mt-0.5 text-xs text-slate-500">
             {[
-              invoice.bandmateName,
+              invoice.contactName ?? invoice.bandmateName,
               invoice.invoiceNumber,
               typeof invoice.amount === "number" ? formatMoney(invoice.amount) : null,
               invoice.eventDate ? formatDate(invoice.eventDate) : null,
@@ -592,6 +774,93 @@ function InvoiceRow({
               .join(" · ") || "No details"}
           </p>
           <p className="mt-0.5 truncate text-xs text-slate-400">{invoice.relPath}</p>
+
+          {/* Status + fulfillment controls */}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {invoice.paidAt ? (
+              <>
+                <span className="rounded-lg bg-success/10 px-2 py-1 text-xs font-medium text-success">
+                  Paid{" "}
+                  {new Date(invoice.paidAt).toLocaleDateString("en-CA", {
+                    month: "short",
+                    day: "numeric",
+                  })}
+                </span>
+                {invoice.receiptPath ? (
+                  <>
+                    <a
+                      href={`/api/local/invoices/${invoice.id}/receipt`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={`${flagButton} text-accent hover:bg-elev`}
+                    >
+                      View receipt
+                    </a>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => receiptRef.current?.click()}
+                    disabled={busy}
+                    className={`${flagButton} text-dim hover:bg-elev hover:text-ink`}
+                  >
+                    Attach receipt
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => patch({ paid: false })}
+                  disabled={busy}
+                  className={`${flagButton} text-dim hover:bg-elev hover:text-ink`}
+                >
+                  Mark unpaid
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => receiptRef.current?.click()}
+                  disabled={busy}
+                  className={`${flagButton} bg-elev text-ink hover:brightness-110`}
+                >
+                  Attach receipt
+                </button>
+                <button
+                  type="button"
+                  onClick={() => patch({ paid: true })}
+                  disabled={busy}
+                  className={`${flagButton} text-dim hover:bg-elev hover:text-ink`}
+                >
+                  Mark paid
+                </button>
+              </>
+            )}
+            {inbound ? (
+              <button
+                type="button"
+                onClick={() => patch({ emailReceived: !invoice.emailReceived })}
+                disabled={busy}
+                className={`${flagButton} ${
+                  invoice.emailReceived
+                    ? "bg-success/10 text-success"
+                    : "text-dim hover:bg-elev hover:text-ink"
+                }`}
+                title="Did the sender email you this invoice?"
+              >
+                {invoice.emailReceived ? "Emailed ✓" : "Mark emailed"}
+              </button>
+            ) : null}
+          </div>
+          <input
+            ref={receiptRef}
+            type="file"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) uploadReceipt(f);
+            }}
+          />
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <a
@@ -671,6 +940,7 @@ const EMPTY_UPLOAD = {
   eventName: "",
   eventDate: "",
   bandmateName: "",
+  contactEmail: "",
   invoiceNumber: "",
   amount: "",
   notes: "",
@@ -765,14 +1035,22 @@ function UploadCard({ onUploaded }: { onUploaded: () => void }) {
             />
           </div>
           <div>
+            <Label hint="(links a contact)">Their email</Label>
+            <Input
+              type="email"
+              value={form.contactEmail}
+              onChange={(e) => update("contactEmail", e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
             <Label>Invoice #</Label>
             <Input
               value={form.invoiceNumber}
               onChange={(e) => update("invoiceNumber", e.target.value)}
             />
           </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
           <div>
             <Label>Amount</Label>
             <Input

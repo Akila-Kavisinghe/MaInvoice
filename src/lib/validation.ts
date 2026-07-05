@@ -73,6 +73,12 @@ export const libraryMetaSchema = z.object({
   eventName: optionalText,
   eventDate: isoDate.optional().or(z.literal("").transform(() => undefined)),
   bandmateName: optionalText,
+  contactEmail: trimmed
+    .email("Enter a valid email")
+    .max(200)
+    .transform((e) => e.toLowerCase())
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
   invoiceNumber: optionalText,
   // Arrives as a form-data string; "" means "not provided" (plain coerce
   // would turn "" into 0).
@@ -87,3 +93,49 @@ export const libraryMetaSchema = z.object({
 export const indexFileSchema = libraryMetaSchema.extend({
   relPath: trimmed.min(1).max(1000),
 });
+
+const optionalEmail = trimmed
+  .email("Enter a valid email")
+  .max(200)
+  .transform((e) => e.toLowerCase())
+  .optional()
+  .or(z.literal("").transform(() => undefined));
+
+/** Local library → create/edit a contact card. */
+export const contactSchema = z.object({
+  email: trimmed.email("Enter a valid email").max(200).transform((e) => e.toLowerCase()),
+  name: optionalText,
+  address: optionalText,
+  phone: optionalText,
+  notes: optionalText,
+});
+
+/** Local library → generate an outbound invoice (money the user requests). */
+export const outboundSchema = z.object({
+  clientName: trimmed.min(1, "Required").max(200),
+  clientEmail: optionalEmail,
+  clientAddress: optionalText,
+  eventName: optionalText,
+  eventDate: isoDate.optional().or(z.literal("").transform(() => undefined)),
+  venue: optionalText,
+  description: trimmed.min(1, "Required").max(500),
+  amount: z
+    .number({ invalid_type_error: "Enter a number" })
+    .positive("Enter an amount greater than 0")
+    .max(1_000_000),
+  dueDate: isoDate.optional().or(z.literal("").transform(() => undefined)),
+  paymentInstructions: optionalText,
+  notes: optionalText,
+});
+
+export type OutboundInput = z.infer<typeof outboundSchema>;
+
+/** Local library → toggle flags on an invoice row. */
+export const invoicePatchSchema = z
+  .object({
+    emailReceived: z.boolean().optional(),
+    paid: z.boolean().optional(),
+  })
+  .refine((d) => d.emailReceived !== undefined || d.paid !== undefined, {
+    message: "Nothing to update",
+  });

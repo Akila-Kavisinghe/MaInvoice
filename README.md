@@ -125,11 +125,29 @@ upload arbitrary invoice PDFs by hand.
    browse or type a path (new folders are created for you); change it later
    via the "Change" link in the header. Setting `INVOICE_DIR` in `.env.local`
    also works and is used until you pick one in the app.
-4. Press **Sync now** to pull new invoices. Each PDF is filed as
-   `<year>/<event-date event-name>/<filename>.pdf`; manual uploads without an
-   event go to `_uploads/<year>/`. The `manifest.json` index lives inside the
-   folder, so it travels with it. PDFs dropped into the folder by hand show up
-   under "Found in folder" for one-click indexing.
+4. Press **Sync now** to pull new invoices (the app also auto-syncs every 5
+   minutes). Invoices are filed as
+   `Inbound|Outbound/<year>/<event-date event-name>/<filename>.pdf`; manual
+   uploads without an event go to `Inbound/_uploads/<year>/`. The
+   `manifest.json` index and `contacts.json` live inside the folder, so they
+   travel with it. PDFs dropped into the folder by hand show up under "Found
+   in folder" for one-click indexing.
+
+The library is a full bookkeeping view:
+
+- **Inbound & outbound** — invoices submitted through your links (or uploaded)
+  are Inbound; **New outbound invoice** generates a PDF from your business to
+  a client (set "Your business details" once in the app), filed under
+  Outbound, with a prefilled email draft to send it.
+- **Invoice links from the app** — **New invoice link** creates bandmate links
+  on your server through the sync token, no browser sign-in needed.
+- **Contacts** — a contact card is auto-created for every sender/client;
+  filter the library by contact, direction, or paid status.
+- **Fulfillment** — attach a payment receipt (any file type) to an invoice
+  row; it's stored next to the invoice PDF as `Receipt - …` and the row is
+  marked paid. Rows can also be marked paid without a receipt, and inbound
+  rows have a "Mark emailed" toggle to track whether the sender emailed the
+  invoice in.
 
 The server keeps a generated PDF (flagged pending, 30-day expiry) only until
 your local app confirms it has been written to your folder — then it's deleted

@@ -131,32 +131,59 @@ function EventCell({ label, value }: { label: string; value: string }) {
   );
 }
 
-/**
- * The invoice is issued BY the bandmate (From) TO the band/admin (Bill To).
- */
-function InvoiceDocument({
-  gig,
-  input,
-  issueDate,
-}: {
-  gig: Gig;
-  input: BandmateInput;
-  issueDate: string;
-}) {
+interface Party {
+  name: string;
+  /** Address lines, email, phone, tax number — rendered in order. */
+  lines: string[];
+}
+
+interface InvoiceProps {
+  invoiceNumber: string;
+  issueDate: string; // yyyy-mm-dd
+  dueDate?: string;
+  from: Party;
+  billTo: Party;
+  /** Optional event box (gigs have one; general outbound invoices may not). */
+  event?: { name: string; date: string; venue?: string };
+  description: string;
+  /** Muted second line under the description in the line-item table. */
+  descriptionDetail?: string;
+  amount: number;
+  paymentMethod?: string;
+  paymentInstructions?: string;
+  notes?: string;
+}
+
+/** Direction-neutral invoice document: From bills BillTo. */
+function InvoiceDocument(props: InvoiceProps) {
+  const {
+    invoiceNumber,
+    issueDate,
+    dueDate,
+    from,
+    billTo,
+    event,
+    description,
+    descriptionDetail,
+    amount,
+    paymentMethod,
+    paymentInstructions,
+    notes,
+  } = props;
   return (
     <Document
-      title={`Invoice ${input.invoiceNumber}`}
-      author={input.bandmateName}
-      subject={`Invoice for ${gig.eventName}`}
+      title={`Invoice ${invoiceNumber}`}
+      author={from.name}
+      subject={event ? `Invoice for ${event.name}` : `Invoice ${invoiceNumber}`}
     >
       <Page size="A4" style={styles.page}>
         {/* Header */}
         <View style={styles.headerRow}>
           <Text style={styles.title}>INVOICE</Text>
           <View style={styles.metaTable}>
-            <MetaRow label="Invoice #" value={input.invoiceNumber} />
+            <MetaRow label="Invoice #" value={invoiceNumber} />
             <MetaRow label="Issue date" value={formatDate(issueDate)} />
-            {gig.dueDate ? <MetaRow label="Due date" value={formatDate(gig.dueDate)} /> : null}
+            {dueDate ? <MetaRow label="Due date" value={formatDate(dueDate)} /> : null}
           </View>
         </View>
 
@@ -164,50 +191,33 @@ function InvoiceDocument({
         <View style={styles.partiesRow}>
           <View style={styles.party}>
             <Text style={styles.partyLabel}>From</Text>
-            <Text style={styles.partyName}>{input.bandmateName}</Text>
-            {input.bandmateAddress
-              ? input.bandmateAddress
-                  .split("\n")
-                  .map((l, i) => (
-                    <Text key={i} style={styles.partyLine}>
-                      {l}
-                    </Text>
-                  ))
-              : null}
-            <Text style={styles.partyLine}>{input.bandmateEmail}</Text>
-            {input.taxNumber ? (
-              <Text style={styles.partyLine}>Tax / HST #: {input.taxNumber}</Text>
-            ) : null}
+            <Text style={styles.partyName}>{from.name}</Text>
+            {from.lines.map((l, i) => (
+              <Text key={i} style={styles.partyLine}>
+                {l}
+              </Text>
+            ))}
           </View>
 
           <View style={styles.party}>
             <Text style={styles.partyLabel}>Bill to</Text>
-            <Text style={styles.partyName}>{gig.payeeName}</Text>
-            {gig.payeeContact ? (
-              <Text style={styles.partyLine}>{gig.payeeContact}</Text>
-            ) : null}
-            {gig.payeeAddress
-              ? gig.payeeAddress
-                  .split("\n")
-                  .map((l, i) => (
-                    <Text key={i} style={styles.partyLine}>
-                      {l}
-                    </Text>
-                  ))
-              : null}
-            {gig.payeePhone ? (
-              <Text style={styles.partyLine}>{gig.payeePhone}</Text>
-            ) : null}
-            <Text style={styles.partyLine}>{gig.payeeEmail}</Text>
+            <Text style={styles.partyName}>{billTo.name}</Text>
+            {billTo.lines.map((l, i) => (
+              <Text key={i} style={styles.partyLine}>
+                {l}
+              </Text>
+            ))}
           </View>
         </View>
 
         {/* Event details */}
-        <View style={styles.eventBox}>
-          <EventCell label="Event" value={gig.eventName} />
-          <EventCell label="Date" value={formatDate(gig.eventDate)} />
-          {gig.venue ? <EventCell label="Venue / location" value={gig.venue} /> : null}
-        </View>
+        {event ? (
+          <View style={styles.eventBox}>
+            <EventCell label="Event" value={event.name} />
+            <EventCell label="Date" value={formatDate(event.date)} />
+            {event.venue ? <EventCell label="Venue / location" value={event.venue} /> : null}
+          </View>
+        ) : null}
 
         {/* Line items */}
         <View style={styles.tableHead}>
@@ -216,12 +226,14 @@ function InvoiceDocument({
         </View>
         <View style={styles.tableRow}>
           <View style={styles.colDesc}>
-            <Text>{gig.paymentDescription}</Text>
-            <Text style={{ color: COLORS.muted, marginTop: 2 }}>
-              {gig.eventName} — {formatDate(gig.eventDate)}
-            </Text>
+            <Text>{description}</Text>
+            {descriptionDetail ? (
+              <Text style={{ color: COLORS.muted, marginTop: 2 }}>
+                {descriptionDetail}
+              </Text>
+            ) : null}
           </View>
-          <Text style={styles.colAmount}>{formatMoney(input.amount)}</Text>
+          <Text style={styles.colAmount}>{formatMoney(amount)}</Text>
         </View>
 
         {/* Totals */}
@@ -229,39 +241,40 @@ function InvoiceDocument({
           <View style={styles.totalsBox}>
             <View style={styles.totalRow}>
               <Text style={{ color: COLORS.muted }}>Subtotal</Text>
-              <Text>{formatMoney(input.amount)}</Text>
+              <Text>{formatMoney(amount)}</Text>
             </View>
             <View style={styles.grandRow}>
               <Text style={styles.grandLabel}>Total due</Text>
-              <Text style={styles.grandValue}>{formatMoney(input.amount)}</Text>
+              <Text style={styles.grandValue}>{formatMoney(amount)}</Text>
             </View>
           </View>
         </View>
 
         {/* Payment + notes */}
-        {input.paymentMethod ? (
+        {paymentMethod ? (
           <View style={styles.noteBlock}>
             <Text style={styles.noteLabel}>Payment method</Text>
-            <Text>{input.paymentMethod}</Text>
+            <Text>{paymentMethod}</Text>
           </View>
         ) : null}
 
-        {gig.notes ? (
+        {paymentInstructions ? (
           <View style={styles.noteBlock}>
             <Text style={styles.noteLabel}>Payment instructions</Text>
-            <Text>{gig.notes}</Text>
+            <Text>{paymentInstructions}</Text>
           </View>
         ) : null}
 
-        {input.notes ? (
+        {notes ? (
           <View style={styles.noteBlock}>
             <Text style={styles.noteLabel}>Notes</Text>
-            <Text>{input.notes}</Text>
+            <Text>{notes}</Text>
           </View>
         ) : null}
 
         <Text style={styles.footer} fixed>
-          Invoice {input.invoiceNumber} · {input.bandmateName} · {gig.eventName}
+          Invoice {invoiceNumber} · {from.name}
+          {event ? ` · ${event.name}` : ""}
           {"  ·  Generated with WONDERvoice"}
         </Text>
       </Page>
@@ -269,12 +282,102 @@ function InvoiceDocument({
   );
 }
 
+/**
+ * Inbound: the invoice is issued BY the bandmate (From) TO the band (Bill To).
+ * Signature and output unchanged — this maps onto the neutral document.
+ */
 export async function renderInvoicePdf(
   gig: Gig,
   input: BandmateInput,
 ): Promise<Buffer> {
   const issueDate = new Date().toISOString().slice(0, 10);
+  const fromLines = [
+    ...(input.bandmateAddress ? input.bandmateAddress.split("\n") : []),
+    input.bandmateEmail,
+    ...(input.taxNumber ? [`Tax / HST #: ${input.taxNumber}`] : []),
+  ];
+  const billToLines = [
+    ...(gig.payeeContact ? [gig.payeeContact] : []),
+    ...(gig.payeeAddress ? gig.payeeAddress.split("\n") : []),
+    ...(gig.payeePhone ? [gig.payeePhone] : []),
+    gig.payeeEmail,
+  ];
   return renderToBuffer(
-    <InvoiceDocument gig={gig} input={input} issueDate={issueDate} />,
+    <InvoiceDocument
+      invoiceNumber={input.invoiceNumber}
+      issueDate={issueDate}
+      dueDate={gig.dueDate}
+      from={{ name: input.bandmateName, lines: fromLines }}
+      billTo={{ name: gig.payeeName, lines: billToLines }}
+      event={{ name: gig.eventName, date: gig.eventDate, venue: gig.venue }}
+      description={gig.paymentDescription}
+      descriptionDetail={`${gig.eventName} — ${formatDate(gig.eventDate)}`}
+      amount={input.amount}
+      paymentMethod={input.paymentMethod}
+      paymentInstructions={gig.notes}
+      notes={input.notes}
+    />,
+  );
+}
+
+export interface OutboundPdfArgs {
+  invoiceNumber: string;
+  business: {
+    name: string;
+    email: string;
+    address?: string;
+    phone?: string;
+    taxNumber?: string;
+  };
+  clientName: string;
+  clientEmail?: string;
+  clientAddress?: string;
+  eventName?: string;
+  eventDate?: string;
+  venue?: string;
+  description: string;
+  amount: number;
+  dueDate?: string;
+  paymentInstructions?: string;
+  notes?: string;
+}
+
+/** Outbound: the user's business (From) bills a client (Bill To). */
+export async function renderOutboundInvoicePdf(
+  args: OutboundPdfArgs,
+): Promise<Buffer> {
+  const issueDate = new Date().toISOString().slice(0, 10);
+  const fromLines = [
+    ...(args.business.address ? args.business.address.split("\n") : []),
+    ...(args.business.phone ? [args.business.phone] : []),
+    args.business.email,
+    ...(args.business.taxNumber ? [`Tax / HST #: ${args.business.taxNumber}`] : []),
+  ];
+  const billToLines = [
+    ...(args.clientAddress ? args.clientAddress.split("\n") : []),
+    ...(args.clientEmail ? [args.clientEmail] : []),
+  ];
+  return renderToBuffer(
+    <InvoiceDocument
+      invoiceNumber={args.invoiceNumber}
+      issueDate={issueDate}
+      dueDate={args.dueDate}
+      from={{ name: args.business.name, lines: fromLines }}
+      billTo={{ name: args.clientName, lines: billToLines }}
+      event={
+        args.eventName && args.eventDate
+          ? { name: args.eventName, date: args.eventDate, venue: args.venue }
+          : undefined
+      }
+      description={args.description}
+      descriptionDetail={
+        args.eventName && args.eventDate
+          ? `${args.eventName} — ${formatDate(args.eventDate)}`
+          : undefined
+      }
+      amount={args.amount}
+      paymentInstructions={args.paymentInstructions}
+      notes={args.notes}
+    />,
   );
 }

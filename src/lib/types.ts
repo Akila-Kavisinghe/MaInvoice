@@ -83,6 +83,8 @@ export interface PendingInvoice {
   eventName: string;
   eventDate: string; // yyyy-mm-dd
   bandmateName: string;
+  /** Optional: pendings stored before this field existed lack it. */
+  bandmateEmail?: string;
   invoiceNumber: string;
   amount: number;
   filename: string;

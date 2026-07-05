@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { sameOrigin } from "@/lib/auth";
 import { localModeUnavailable } from "@/lib/local-mode";
 import { addInvoice, hasInvoiceDir, listInvoices, scanUnindexed } from "@/lib/library";
+import { upsertContact } from "@/lib/contacts";
 import { libraryMetaSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -43,6 +44,7 @@ export async function POST(req: Request) {
     eventName: form.get("eventName") ?? "",
     eventDate: form.get("eventDate") ?? "",
     bandmateName: form.get("bandmateName") ?? "",
+    contactEmail: form.get("contactEmail") ?? "",
     invoiceNumber: form.get("invoiceNumber") ?? "",
     amount: form.get("amount") ?? "",
     notes: form.get("notes") ?? "",
@@ -59,6 +61,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Not a PDF file" }, { status: 400 });
   }
 
-  const entry = await addInvoice(pdf, file.name || "invoice.pdf", "upload", parsed.data);
+  const meta = {
+    ...parsed.data,
+    contactName: parsed.data.bandmateName,
+  };
+  const entry = await addInvoice(pdf, file.name || "invoice.pdf", "upload", "inbound", meta);
+  if (meta.contactEmail) {
+    try {
+      await upsertContact({ email: meta.contactEmail, name: meta.bandmateName });
+    } catch (err) {
+      console.error("contact upsert failed", err);
+    }
+  }
   return NextResponse.json({ entry });
 }

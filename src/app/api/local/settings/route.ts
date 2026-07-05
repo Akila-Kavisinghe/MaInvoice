@@ -5,14 +5,24 @@ import { sameOrigin } from "@/lib/auth";
 import { localModeUnavailable } from "@/lib/local-mode";
 import {
   expandHome,
+  resolveBusiness,
   resolveInvoiceDir,
   resolveRemoteSync,
+  saveBusiness,
   saveInvoiceDir,
   saveRemoteSync,
 } from "@/lib/local-settings";
 import { z } from "zod";
 
 export const runtime = "nodejs";
+
+const businessSchema = z.object({
+  name: z.string().trim().max(200),
+  email: z.string().trim().max(200),
+  address: z.string().trim().max(1000),
+  phone: z.string().trim().max(50),
+  taxNumber: z.string().trim().max(100),
+});
 
 const settingsSchema = z
   .object({
@@ -24,24 +34,30 @@ const settingsSchema = z
       .regex(/^mis_[\w-]+$/, "That doesn't look like a sync token (mis_…)")
       .max(200)
       .optional(),
+    business: businessSchema.optional(),
   })
-  .refine((d) => d.path || (d.remoteUrl && d.remoteToken), {
+  .refine((d) => d.path || (d.remoteUrl && d.remoteToken) || d.business, {
     message: "Nothing to save",
   })
   .refine((d) => !!d.remoteUrl === !!d.remoteToken, {
     message: "Enter both the server URL and the sync token",
   });
 
-export async function GET() {
-  const gate = localModeUnavailable();
-  if (gate) return gate;
+function settingsResponse() {
   const remote = resolveRemoteSync();
   return NextResponse.json({
     invoiceDir: resolveInvoiceDir(),
     // Never return the token itself — the UI only needs to know it's set.
     remoteUrl: remote?.url ?? null,
     remoteConfigured: remote !== null,
+    business: resolveBusiness(),
   });
+}
+
+export async function GET() {
+  const gate = localModeUnavailable();
+  if (gate) return gate;
+  return settingsResponse();
 }
 
 /** Save the invoice folder and/or the server connection from the app. */
@@ -84,10 +100,9 @@ export async function POST(req: Request) {
     saveRemoteSync(parsed.data.remoteUrl, parsed.data.remoteToken);
   }
 
-  const remote = resolveRemoteSync();
-  return NextResponse.json({
-    invoiceDir: resolveInvoiceDir(),
-    remoteUrl: remote?.url ?? null,
-    remoteConfigured: remote !== null,
-  });
+  if (parsed.data.business) {
+    saveBusiness(parsed.data.business);
+  }
+
+  return settingsResponse();
 }

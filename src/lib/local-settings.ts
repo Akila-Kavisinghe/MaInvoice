@@ -18,10 +18,20 @@ const DATA_DIR =
   process.env.MAINVOICE_DATA_DIR || path.join(process.cwd(), "data");
 const SETTINGS_FILE = path.join(DATA_DIR, "local-settings.json");
 
+export interface BusinessInfo {
+  name: string;
+  email: string;
+  address: string;
+  phone: string;
+  taxNumber: string;
+}
+
 interface LocalSettings {
   invoiceDir?: string;
   remoteUrl?: string;
   remoteToken?: string;
+  /** "From" identity on outbound invoices. */
+  business?: Partial<BusinessInfo>;
 }
 
 let cache: LocalSettings | null = null;
@@ -78,4 +88,29 @@ export function resolveRemoteSync(): { url: string; token: string } | null {
 
 export function saveRemoteSync(url: string, token: string): void {
   writeSettings({ remoteUrl: url.replace(/\/+$/, ""), remoteToken: token });
+}
+
+/**
+ * The user's own business details, used as "From" on outbound invoices.
+ * App settings win; BUSINESS_* env vars fill any blanks (checkout setups).
+ */
+export function resolveBusiness(): BusinessInfo {
+  const s = readSettings().business ?? {};
+  const env = {
+    name: process.env.BUSINESS_NAME?.trim() ?? "",
+    email: process.env.BUSINESS_EMAIL?.trim() ?? "",
+    address: (process.env.BUSINESS_ADDRESS ?? "").replace(/\\n/g, "\n").trim(),
+    phone: process.env.BUSINESS_PHONE?.trim() ?? "",
+  };
+  return {
+    name: s.name?.trim() || env.name,
+    email: s.email?.trim() || env.email,
+    address: s.address?.trim() || env.address,
+    phone: s.phone?.trim() || env.phone,
+    taxNumber: s.taxNumber?.trim() || "",
+  };
+}
+
+export function saveBusiness(business: Partial<BusinessInfo>): void {
+  writeSettings({ business });
 }
