@@ -1,0 +1,174 @@
+"use client";
+
+import { useState } from "react";
+import { formatMoney } from "@/lib/format";
+
+/** Shared bits for the admin pages. */
+
+export interface UserInfo {
+  email: string;
+  name: string;
+  isSuperAdmin: boolean;
+  hasSyncToken: boolean;
+}
+
+export interface Submission {
+  bandmateName: string;
+  bandmateEmail: string;
+  invoiceNumber: string;
+  amount: number;
+  submittedAt: string;
+}
+
+export interface LinkRow {
+  token: string;
+  eventName: string;
+  eventDate: string;
+  createdAt: string;
+  url: string;
+  submissions: Submission[];
+}
+
+export interface BusinessDefaults {
+  name: string;
+  contact: string;
+  address: string;
+  phone: string;
+  email: string;
+}
+
+export function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 className="pt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+      {children}
+    </h3>
+  );
+}
+
+export function CopyField({ value, compact }: { value: string; compact?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard may be unavailable */
+    }
+  }
+  return (
+    <div className={`flex items-center gap-2 ${compact ? "mt-2" : "mt-3"}`}>
+      <input
+        readOnly
+        value={value}
+        onFocus={(e) => e.currentTarget.select()}
+        className="w-full truncate rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+      />
+      <button
+        type="button"
+        onClick={copy}
+        className="shrink-0 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700"
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
+export function SubmissionsTable({ submissions }: { submissions: Submission[] }) {
+  const total = submissions.reduce((sum, s) => sum + s.amount, 0);
+  return (
+    <div className="mt-3 border-t border-slate-100 pt-3">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+        Submitted ({submissions.length})
+      </p>
+      {submissions.length === 0 ? (
+        <p className="text-sm text-slate-400">No submissions yet.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="text-xs uppercase tracking-wide text-slate-400">
+                <th className="pb-1 pr-3 font-medium">Bandmate</th>
+                <th className="pb-1 pr-3 font-medium">Invoice #</th>
+                <th className="pb-1 pr-3 text-right font-medium">Amount</th>
+                <th className="pb-1 font-medium">When</th>
+              </tr>
+            </thead>
+            <tbody>
+              {submissions.map((s, i) => (
+                <tr key={i} className="border-t border-slate-100 align-top">
+                  <td className="py-1.5 pr-3">
+                    <div className="font-medium text-slate-800">{s.bandmateName}</div>
+                    <div className="truncate text-xs text-slate-400">{s.bandmateEmail}</div>
+                  </td>
+                  <td className="py-1.5 pr-3 text-slate-600">{s.invoiceNumber}</td>
+                  <td className="py-1.5 pr-3 text-right text-slate-800">
+                    {formatMoney(s.amount)}
+                  </td>
+                  <td className="py-1.5 text-xs text-slate-500">
+                    {new Date(s.submittedAt).toLocaleDateString("en-CA", {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-slate-200">
+                <td className="pt-1.5 text-xs font-semibold text-slate-500" colSpan={2}>
+                  Total
+                </td>
+                <td className="pt-1.5 text-right text-sm font-semibold text-slate-800">
+                  {formatMoney(total)}
+                </td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function RevokeButton({
+  token,
+  eventName,
+  onRevoked,
+}: {
+  token: string;
+  eventName: string;
+  onRevoked: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  async function revoke() {
+    if (
+      !window.confirm(
+        `Revoke the link for "${eventName}"? Anyone who still has it will lose access.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/admin/links?token=${encodeURIComponent(token)}`, {
+        method: "DELETE",
+      });
+      if (res.ok) onRevoked();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button
+      type="button"
+      onClick={revoke}
+      disabled={busy}
+      className="shrink-0 rounded-lg px-2.5 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+    >
+      {busy ? "Revoking…" : "Revoke"}
+    </button>
+  );
+}

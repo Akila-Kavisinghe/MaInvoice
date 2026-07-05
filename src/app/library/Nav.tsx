@@ -29,6 +29,7 @@ export default function Nav() {
       </Link>
       <nav className="flex items-center gap-1">
         {tab("/library", "Invoices", true)}
+        {tab("/library/links", "Links")}
         {tab("/library/create", "Create")}
         <Link
           href="/library/settings"
