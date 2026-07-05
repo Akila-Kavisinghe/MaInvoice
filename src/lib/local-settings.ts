@@ -34,16 +34,26 @@ interface LocalSettings {
   business?: Partial<BusinessInfo>;
 }
 
-let cache: LocalSettings | null = null;
+// Cached parse, invalidated by file mtime so out-of-band edits (or another
+// process writing the file) are picked up without a restart.
+let cache: { settings: LocalSettings; mtimeMs: number } | null = null;
 
 function readSettings(): LocalSettings {
-  if (cache) return cache;
+  let mtimeMs = -1;
   try {
-    cache = JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf8")) as LocalSettings;
+    mtimeMs = fs.statSync(SETTINGS_FILE).mtimeMs;
   } catch {
-    cache = {};
+    /* missing file → mtime -1 */
   }
-  return cache;
+  if (cache && cache.mtimeMs === mtimeMs) return cache.settings;
+  let settings: LocalSettings = {};
+  try {
+    settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, "utf8")) as LocalSettings;
+  } catch {
+    settings = {};
+  }
+  cache = { settings, mtimeMs };
+  return settings;
 }
 
 function writeSettings(patch: Partial<LocalSettings>): void {
@@ -52,7 +62,7 @@ function writeSettings(patch: Partial<LocalSettings>): void {
   const tmp = `${SETTINGS_FILE}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, JSON.stringify(settings, null, 2), "utf8");
   fs.renameSync(tmp, SETTINGS_FILE);
-  cache = settings;
+  cache = { settings, mtimeMs: fs.statSync(SETTINGS_FILE).mtimeMs };
 }
 
 /** Expand a leading "~" so users can type paths the way their shell shows them. */
