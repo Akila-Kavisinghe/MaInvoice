@@ -4,6 +4,12 @@ export interface Gig {
   token: string;
   /** ISO timestamp the link was created. */
   createdAt: string;
+  /**
+   * Lowercased email of the signed-in user who created the link. Absent on
+   * legacy gigs created before multi-user support — those are adopted by the
+   * super admin on their next visit (see migrateLegacyGigs).
+   */
+  ownerEmail?: string;
 
   // ---- Payee (the admin / band — who is billed) ----
   payeeName: string; // business name
@@ -56,3 +62,33 @@ export interface BandmateInput {
   paymentMethod?: string;
   notes?: string;
 }
+
+/** A user allowed to sign in with Google and run their own invoice links. */
+export interface AllowedUser {
+  email: string; // lowercased
+  addedAt: string; // ISO timestamp
+  addedBy: string; // super admin's email
+}
+
+/**
+ * A generated invoice PDF retained server-side until the owner's local app
+ * pulls it into their invoice folder (then it is deleted). Expires after 30
+ * days if never synced — the PDF contains bandmate details we don't want to
+ * hold indefinitely.
+ */
+export interface PendingInvoice {
+  id: string; // crypto.randomUUID()
+  ownerEmail: string;
+  gigToken: string;
+  eventName: string;
+  eventDate: string; // yyyy-mm-dd
+  bandmateName: string;
+  invoiceNumber: string;
+  amount: number;
+  filename: string;
+  createdAt: string; // ISO timestamp
+  pdfBase64: string;
+}
+
+/** Pending invoice without the payload — safe to list. */
+export type PendingInvoiceMeta = Omit<PendingInvoice, "pdfBase64">;

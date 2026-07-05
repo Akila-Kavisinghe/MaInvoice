@@ -1,6 +1,8 @@
+import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { hasValidSession, sameOrigin } from "@/lib/auth";
-import { addSubmission, getGig } from "@/lib/store";
+import { config } from "@/lib/config";
+import { addPendingInvoice, addSubmission, getGig } from "@/lib/store";
 import { bandmateSchema } from "@/lib/validation";
 import { renderInvoicePdf } from "@/lib/pdf";
 import { invoiceFilename } from "@/lib/format";
@@ -92,6 +94,35 @@ export async function POST(
     // even if the store write failed.
     console.error("addSubmission failed for gig", token, err);
   }
+
+  // Retain the PDF server-side so the owner's local library app can pull it
+  // into their invoice folder (deleted once the local app acks the download,
+  // or after 30 days). Best-effort — never blocks delivery to the bandmate.
+  try {
+    // Base64 inflates ~33%; keep well under Upstash's 1MB request cap. These
+    // text-only PDFs are typically tens of KB. If the template ever embeds
+    // images, revisit with blob storage.
+    if (pdf.byteLength <= 700 * 1024) {
+      await addPendingInvoice({
+        id: crypto.randomUUID(),
+        ownerEmail: gig.ownerEmail ?? config.superAdminEmail,
+        gigToken: token,
+        eventName: gig.eventName,
+        eventDate: gig.eventDate,
+        bandmateName: input.bandmateName,
+        invoiceNumber,
+        amount: input.amount,
+        filename,
+        createdAt: new Date().toISOString(),
+        pdfBase64: Buffer.from(pdf).toString("base64"),
+      });
+    } else {
+      console.error("PDF too large to retain for sync", token, pdf.byteLength);
+    }
+  } catch (err) {
+    console.error("addPendingInvoice failed for gig", token, err);
+  }
+
   return new NextResponse(new Uint8Array(pdf), {
     status: 200,
     headers: {

@@ -3,7 +3,12 @@
 
 # next.js
 /.next/
+/.next-local/
 /out/
+
+# electron desktop app
+/electron/node_modules/
+/electron/dist/
 
 # vercel
 /.vercel

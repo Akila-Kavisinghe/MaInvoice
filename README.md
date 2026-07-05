@@ -1,26 +1,29 @@
 # WONDERvoice
 
-A small, polished invoice generator for bands. **You** (the admin) create a
-prefilled, tokenized link for each gig and send it to a bandmate. They unlock it
-with a shared password, fill in only their own details, generate a clean
-one-page PDF, and hand it off to their own email app — **the app never touches
-anyone's email account.**
+A small, polished invoice platform for bands. Signed-in users create
+prefilled, tokenized links for each gig and send them to bandmates. Bandmates
+unlock a link with a shared password, fill in only their own details, generate
+a clean one-page PDF, and hand it off to their own email app — **the app never
+touches anyone's email account.**
 
-- **Stack:** Next.js 14 (App Router) · React · TypeScript · Tailwind CSS ·
+- **Stack:** Next.js 15 (App Router) · React · TypeScript · Tailwind CSS ·
   `@react-pdf/renderer` · Zod
-- **Storage:** simple JSON file (`./data/gigs.json`) — easy to swap for a DB
-- **Auth:** server-side passwords, HMAC-signed session cookies, rate limiting
-- **Admin dashboard:** create/revoke links and track who has submitted per gig
-- **No Gmail API, no OAuth, no email permissions**
+- **Storage:** Upstash Redis in production, JSON files in dev
+- **Auth:** Google sign-in for bookkeeping users (allowlist managed by the
+  super admin); bandmate links stay anonymous (shared password / unlock key),
+  HMAC-signed session cookies, rate limiting
+- **Multi-user:** each user has their own links and submissions
+- **Local library mode:** run the same app on your own computer to organize
+  every invoice into a folder you control (e.g. inside Google Drive)
 
 ---
 
 ## How it works
 
 ```
-Admin (/admin)                Bandmate (/i/<token>?k=...)
+User (/admin)                 Bandmate (/i/<token>?k=...)
 ─────────────                 ──────────────────────────
-sign in with ADMIN_PASSWORD   1. open link → auto-unlocked (no typing)
+sign in with Google           1. open link → auto-unlocked (no typing)
 enter gig details             2. see prefilled form (gig details locked in)
 create link  ────────────►    3. fill in their own details
 copy + send link              4. Generate invoice → PDF (server-rendered)
@@ -65,18 +68,99 @@ cp .env.example .env.local
 # 3. Generate a session secret and paste it into .env.local
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
-# 4. Edit .env.local — set BAND_PASSWORD, ADMIN_PASSWORD, SESSION_SECRET, base URL
+# 4. Edit .env.local — set BAND_PASSWORD, SESSION_SECRET, base URL,
+#    GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET, SUPER_ADMIN_EMAIL
 
 # 5. Run it
 npm run dev          # http://localhost:3000
 ```
 
+### Google OAuth client
+
+The bookkeeping side signs in with Google. One-time setup in
+[Google Cloud Console](https://console.cloud.google.com/apis/credentials):
+
+1. Create a project (or reuse one) → **APIs & Services → Credentials** →
+   **Create credentials → OAuth client ID → Web application**.
+2. Add **Authorized redirect URIs** for every host you run on:
+   - `http://localhost:3000/api/auth/google/callback` (dev)
+   - `https://your-domain/api/auth/google/callback` (production)
+3. Copy the client ID/secret into `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`.
+
 Then:
 
-1. Go to **/admin**, sign in with `ADMIN_PASSWORD`, and create a link.
+1. Go to **/admin** and sign in with the Google account set as
+   `SUPER_ADMIN_EMAIL`. Create a link.
 2. Send the link to a bandmate.
-3. They open it, type the `BAND_PASSWORD`, fill in their details, and send you
-   the invoice.
+3. They open it, get auto-unlocked (or type the `BAND_PASSWORD`), fill in their
+   details, and send you the invoice.
+
+### Multiple users
+
+The super admin sees an **Authorized users** card on `/admin`. Add a friend's
+Google email there and they can sign in and run their own invoice links —
+their gigs, links and submissions are completely separate from yours. Remove
+them and they're locked out immediately (their sync token is revoked too).
+Anyone signing in with an email that isn't allowed sees a "not authorized"
+screen and gets no session.
+
+### Local invoice library (`pnpm local`)
+
+The same codebase doubles as a **local invoice organizer** that keeps every
+invoice as a PDF in a folder on *your* machine — point it at a folder inside
+Google Drive/Dropbox and you get cloud backup on your own terms. Invoices
+generated through your links are pulled down automatically; you can also
+upload arbitrary invoice PDFs by hand.
+
+1. On the deployed site, open `/admin` → **Local sync** → **Generate sync
+   token** and copy the `mis_…` token (shown once).
+2. On your computer, in a checkout of this repo, add to `.env.local`:
+   ```bash
+   REMOTE_SYNC_URL="https://your-app.vercel.app"
+   REMOTE_SYNC_TOKEN="mis_..."
+   # BAND_PASSWORD / SESSION_SECRET can be dummy values in local mode
+   ```
+3. Run `pnpm local` → opens on `http://127.0.0.1:3999` and redirects to
+   **/library**. On first run it asks you to pick your invoice folder —
+   browse or type a path (new folders are created for you); change it later
+   via the "Change" link in the header. Setting `INVOICE_DIR` in `.env.local`
+   also works and is used until you pick one in the app.
+4. Press **Sync now** to pull new invoices. Each PDF is filed as
+   `<year>/<event-date event-name>/<filename>.pdf`; manual uploads without an
+   event go to `_uploads/<year>/`. The `manifest.json` index lives inside the
+   folder, so it travels with it. PDFs dropped into the folder by hand show up
+   under "Found in folder" for one-click indexing.
+
+The server keeps a generated PDF (flagged pending, 30-day expiry) only until
+your local app confirms it has been written to your folder — then it's deleted
+from the server. The local pages and `/api/local/*` routes only exist when
+`LOCAL_MODE=1` and never on Vercel; the local server binds to `127.0.0.1`.
+
+The server URL and sync token can also be entered directly in the app (the
+"Connect to your server" card) instead of `.env.local` — that's how the
+desktop app is configured, since it has no env file.
+
+### Desktop app (Electron)
+
+The library also ships as a double-clickable desktop app — the same Next.js
+app in local mode, wrapped in a thin Electron shell that boots the server on a
+random loopback port and opens a window. Nothing about the deployed site
+changes; to the server the app is just another sync client.
+
+```bash
+pnpm app:build        # → electron/dist/WONDERvoice-1.0.0-arm64.dmg (+ x64, zip)
+pnpm app:dev          # dev shell against a running `pnpm local`
+```
+
+To hand it to a friend, they need: the dmg, and their own sync token
+(generated on the website under /admin → Local sync after you add them as a
+user). First launch on macOS: the app is unsigned, so **right-click → Open**
+to get past Gatekeeper (one time only). On first run the app asks for their
+invoice folder (native folder dialog) and the server URL + token — no env
+files, no terminal. App data lives in `~/Library/Application Support/WONDERvoice`.
+
+All Electron code is isolated in `electron/` with its own dependencies; the
+root project and the Vercel deployment are untouched by it.
 
 ### Production
 
@@ -94,11 +178,17 @@ Set `NEXT_PUBLIC_BASE_URL` to your real domain so generated links are correct.
 | Variable               | Required | Purpose                                              |
 | ---------------------- | -------- | ---------------------------------------------------- |
 | `BAND_PASSWORD`        | yes      | Shared password every bandmate types to unlock a link |
-| `ADMIN_PASSWORD`       | yes      | Your password for `/admin` (link creation)           |
 | `SESSION_SECRET`       | yes      | Secret used to sign session cookies (32+ random bytes) |
-| `NEXT_PUBLIC_BASE_URL` | prod     | Public base URL used to build share links            |
+| `GOOGLE_CLIENT_ID`     | yes      | Google OAuth web client ID (bookkeeping sign-in)     |
+| `GOOGLE_CLIENT_SECRET` | yes      | Google OAuth client secret                           |
+| `SUPER_ADMIN_EMAIL`    | yes      | Google account that manages the user allowlist       |
+| `NEXT_PUBLIC_BASE_URL` | prod     | Public base URL used to build share links + OAuth redirect |
 | `UPSTASH_REDIS_REST_URL`   | prod | Upstash Redis REST URL (enables the Redis store)   |
 | `UPSTASH_REDIS_REST_TOKEN` | prod | Upstash Redis REST token                           |
+| `LOCAL_MODE`           | local    | `1` → run as the local invoice library               |
+| `INVOICE_DIR`          | no       | Invoice folder default; usually picked in the app instead |
+| `REMOTE_SYNC_URL`      | local    | Deployed server the local app pulls invoices from    |
+| `REMOTE_SYNC_TOKEN`    | local    | Personal `mis_…` token generated on `/admin`         |
 | `BUSINESS_NAME`        | no       | Your business name — prefills the admin form         |
 | `BUSINESS_CONTACT`     | no       | Contact person — prefills the admin form             |
 | `BUSINESS_ADDRESS`     | no       | Your address (use `\n` for line breaks)              |
@@ -113,10 +203,20 @@ Set `NEXT_PUBLIC_BASE_URL` to your real domain so generated links are correct.
 
 ## Security notes
 
-- **Server-side auth.** The shared and admin passwords are checked on the server
-  (constant-time compare). The bandmate form HTML and gig details are **not sent
-  until the password is verified** — the `/i/<token>` page renders only the
-  password gate otherwise.
+- **Server-side auth.** Bookkeeping users authenticate via the Google OAuth
+  code flow (random `state` cookie, constant-time compare, identity fetched
+  from Google's `userinfo` endpoint, `email_verified` required) and are only
+  admitted if on the allowlist — which is re-checked on **every** request, so
+  removing a user locks them out immediately. The bandmate shared password is
+  checked on the server (constant-time compare); the bandmate form HTML and gig
+  details are **not sent until the password is verified** — the `/i/<token>`
+  page renders only the password gate otherwise.
+- **Per-user isolation.** Every gig is owned by the user who created it; the
+  API refuses to list or revoke another user's links, and sync endpoints 404 on
+  foreign invoice ids.
+- **Sync tokens.** The local app authenticates with a personal 32-random-byte
+  bearer token. Only its SHA-256 is stored; lookups are by hash. Regenerating
+  or removing a user revokes it.
 - **Tokenized links.** Tokens are 24 random bytes (base64url). No invoice data is
   carried in the URL.
 - **Per-link unlock keys, not the global password.** The `?k=` value is an HMAC
@@ -196,22 +296,31 @@ src/
 │  ├─ layout.tsx                  # root layout, mobile viewport
 │  ├─ page.tsx                    # landing / pointer to /admin
 │  ├─ globals.css                 # Tailwind + base styles
-│  ├─ admin/page.tsx              # admin login + create/list links (client)
+│  ├─ admin/                      # Google sign-in + create/list links,
+│  │                              #   user management, sync token (client)
+│  ├─ library/                    # local-mode invoice library UI
 │  ├─ i/[token]/
 │  │  ├─ page.tsx                 # server gate: 404 / password / form
 │  │  ├─ PasswordGate.tsx         # shared-password screen (client)
 │  │  └─ InvoiceForm.tsx          # prefilled form + PDF + email handoff (client)
 │  └─ api/
-│     ├─ admin/login/route.ts     # POST admin password → cookie
-│     ├─ admin/links/route.ts     # POST create link · GET list (admin only)
-│     ├─ auth/login/route.ts      # POST shared password → cookie
+│     ├─ auth/google/…            # Google OAuth flow (login + callback)
+│     ├─ auth/logout/route.ts     # POST → clear user session
+│     ├─ auth/login/route.ts      # POST shared band password → cookie
+│     ├─ admin/links/route.ts     # create / list / revoke links (per user)
+│     ├─ admin/users/route.ts     # allowlist management (super admin)
+│     ├─ admin/sync-token/route.ts# personal sync token for the local app
+│     ├─ sync/…                   # Bearer-token API the local app pulls from
+│     ├─ local/…                  # local-mode-only library + sync-pull routes
 │     └─ invoice/[token]/pdf/route.ts  # POST → server-rendered PDF
 └─ lib/
    ├─ config.ts                   # validated env access
-   ├─ types.ts                    # Gig / BandmateInput
-   ├─ store.ts                    # JSON file store (swap for a DB)
-   ├─ auth.ts                     # signed cookies + password compare
-   ├─ ratelimit.ts                # in-memory rate limiter
+   ├─ types.ts                    # Gig / AllowedUser / PendingInvoice / …
+   ├─ store.ts                    # storage facade (Redis or JSON backend)
+   ├─ auth.ts                     # signed cookies, user sessions, allowlist check
+   ├─ sync-auth.ts                # Bearer sync-token resolution
+   ├─ library.ts                  # local folder database (manifest + files)
+   ├─ ratelimit.ts                # rate limiter (Redis or in-memory)
    ├─ validation.ts               # Zod schemas
    ├─ format.ts                   # money/date/filename helpers
    ├─ email-links.ts              # mailto + Gmail compose builders
@@ -245,10 +354,12 @@ vercel link            # link this folder to a Vercel project
 
 # Add the secrets (run each, paste the value, choose Production — and Preview if
 # you want preview deploys to work):
-vercel env add ADMIN_PASSWORD
 vercel env add BAND_PASSWORD
 vercel env add SESSION_SECRET            # node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 vercel env add NEXT_PUBLIC_BASE_URL      # e.g. https://your-app.vercel.app
+vercel env add GOOGLE_CLIENT_ID
+vercel env add GOOGLE_CLIENT_SECRET
+vercel env add SUPER_ADMIN_EMAIL
 
 # If you did NOT use the Marketplace integration, also add:
 vercel env add UPSTASH_REDIS_REST_URL

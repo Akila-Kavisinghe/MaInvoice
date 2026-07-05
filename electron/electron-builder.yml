@@ -1,0 +1,35 @@
+appId: com.wondervoice.library
+productName: WONDERvoice
+directories:
+  output: dist
+
+files:
+  - main.js
+  - preload.js
+  - package.json
+
+# The standalone Next.js server (built by build.sh) ships as a resource and
+# is spawned by main.js with Electron's own binary as Node.
+extraResources:
+  - from: ../.next-local/standalone
+    to: server
+
+mac:
+  category: public.app-category.finance
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  # Unsigned build: first launch needs right-click → Open (documented in README).
+  identity: null
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]

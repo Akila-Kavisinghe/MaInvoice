@@ -1,8 +1,15 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
-import { createUnlockKey, hasValidSession, sameOrigin } from "@/lib/auth";
+import { createUnlockKey, requireUser, sameOrigin } from "@/lib/auth";
 import { config } from "@/lib/config";
-import { deleteGig, listGigs, saveGig } from "@/lib/store";
+import {
+  deleteGig,
+  getGig,
+  hasSyncToken,
+  listGigs,
+  migrateLegacyGigs,
+  saveGig,
+} from "@/lib/store";
 import { gigCreateSchema } from "@/lib/validation";
 import type { Gig } from "@/lib/types";
 
@@ -13,10 +20,28 @@ function unauthorized() {
 }
 
 export async function GET() {
-  if (!(await hasValidSession("admin"))) return unauthorized();
-  const gigs = await listGigs();
+  const session = await requireUser();
+  if (!session) return unauthorized();
+
+  // Adopt any pre-multi-user gigs into the super admin's account. Idempotent
+  // and cheap once drained.
+  if (session.isSuperAdmin) {
+    try {
+      await migrateLegacyGigs(session.email);
+    } catch (err) {
+      console.error("legacy gig migration failed", err);
+    }
+  }
+
+  const gigs = await listGigs(session.email);
   const baseUrl = config.baseUrl;
   return NextResponse.json({
+    user: {
+      email: session.email,
+      name: session.name,
+      isSuperAdmin: session.isSuperAdmin,
+      hasSyncToken: await hasSyncToken(session.email),
+    },
     defaults: config.business,
     gigs: gigs.map((g) => ({
       token: g.token,
@@ -33,7 +58,8 @@ export async function POST(req: Request) {
   if (!sameOrigin(req)) {
     return NextResponse.json({ error: "Bad origin" }, { status: 403 });
   }
-  if (!(await hasValidSession("admin"))) return unauthorized();
+  const session = await requireUser();
+  if (!session) return unauthorized();
 
   const parsed = gigCreateSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
@@ -47,6 +73,7 @@ export async function POST(req: Request) {
   const gig: Gig = {
     token,
     createdAt: new Date().toISOString(),
+    ownerEmail: session.email,
     ...parsed.data,
   };
   await saveGig(gig);
@@ -61,11 +88,21 @@ export async function DELETE(req: Request) {
   if (!sameOrigin(req)) {
     return NextResponse.json({ error: "Bad origin" }, { status: 403 });
   }
-  if (!(await hasValidSession("admin"))) return unauthorized();
+  const session = await requireUser();
+  if (!session) return unauthorized();
 
   const token = new URL(req.url).searchParams.get("token");
   if (!token) {
     return NextResponse.json({ error: "Missing token" }, { status: 400 });
+  }
+
+  // Only the link's owner may revoke it (legacy owner-less gigs belong to the
+  // super admin).
+  const gig = await getGig(token);
+  if (!gig) return NextResponse.json({ ok: true });
+  const owner = gig.ownerEmail ?? config.superAdminEmail;
+  if (owner !== session.email) {
+    return NextResponse.json({ error: "Not your link" }, { status: 403 });
   }
 
   // Deleting a gig revokes its link: the page 404s and the unlock key no longer

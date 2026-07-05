@@ -18,11 +18,26 @@ export const config = {
   get bandPassword() {
     return required("BAND_PASSWORD");
   },
-  get adminPassword() {
-    return required("ADMIN_PASSWORD");
-  },
   get sessionSecret() {
     return required("SESSION_SECRET");
+  },
+  get googleClientId() {
+    return required("GOOGLE_CLIENT_ID");
+  },
+  get googleClientSecret() {
+    return required("GOOGLE_CLIENT_SECRET");
+  },
+  /** The one account that manages the user allowlist. Always allowed to sign in. */
+  get superAdminEmail() {
+    return required("SUPER_ADMIN_EMAIL").trim().toLowerCase();
+  },
+
+  /**
+   * Local library mode: the app runs on the user's own machine and organizes
+   * invoices into INVOICE_DIR instead of serving the hosted platform.
+   */
+  get localMode() {
+    return process.env.LOCAL_MODE === "1";
   },
   /** Public base URL, no trailing slash. Falls back to localhost in dev. */
   get baseUrl() {

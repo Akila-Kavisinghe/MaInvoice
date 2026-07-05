@@ -13,6 +13,15 @@ import {
 } from "@/components/ui";
 import { gigCreateSchema } from "@/lib/validation";
 import { formatDate, formatMoney } from "@/lib/format";
+import UsersCard from "./UsersCard";
+import SyncCard from "./SyncCard";
+
+interface UserInfo {
+  email: string;
+  name: string;
+  isSuperAdmin: boolean;
+  hasSyncToken: boolean;
+}
 
 interface Submission {
   bandmateName: string;
@@ -35,9 +44,25 @@ type View = "loading" | "login" | "app";
 
 export default function AdminPage() {
   const [view, setView] = useState<View>("loading");
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Probe auth: the links endpoint is admin-only.
+    // Surface errors handed back by the OAuth callback redirect.
+    const params = new URLSearchParams(window.location.search);
+    const error = params.get("error");
+    if (error === "not-authorized") {
+      const email = params.get("email");
+      setAuthError(
+        `${email ?? "This account"} isn't authorized to use this app. Ask the administrator to add you.`,
+      );
+    } else if (error) {
+      setAuthError("Sign-in failed. Please try again.");
+    }
+    if (error) {
+      window.history.replaceState(null, "", "/admin");
+    }
+
+    // Probe auth: the links endpoint is user-only.
     fetch("/api/admin/links")
       .then((r) => setView(r.ok ? "app" : "login"))
       .catch(() => setView("login"));
@@ -52,64 +77,58 @@ export default function AdminPage() {
   }
 
   return view === "login" ? (
-    <AdminLogin onSuccess={() => setView("app")} />
+    <SignIn error={authError} />
   ) : (
-    <AdminApp />
+    <AdminApp onSignedOut={() => setView("login")} />
   );
 }
 
-function AdminLogin({ onSuccess }: { onSuccess: () => void }) {
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-    try {
-      const res = await fetch("/api/admin/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
-      });
-      if (res.ok) return onSuccess();
-      const data = await res.json().catch(() => ({}));
-      setError(data.error ?? "Login failed");
-    } catch {
-      setError("Network error");
-    } finally {
-      setLoading(false);
-    }
-  }
-
+function SignIn({ error }: { error: string | null }) {
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-10">
       <Logo className="mb-6" />
       <Card className="p-7">
-        <h1 className="text-xl font-semibold text-ink">Admin sign in</h1>
+        <h1 className="text-xl font-semibold text-ink">Sign in</h1>
         <p className="mt-1 text-sm text-dim">
-          Use your admin password to create invoice links.
+          Sign in with your Google account to create invoice links and manage
+          your bookkeeping.
         </p>
-        <form onSubmit={onSubmit} className="mt-5 space-y-4">
-          <div>
-            <Label htmlFor="adminpw">Admin password</Label>
-            <Input
-              id="adminpw"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoFocus
-            />
+        {error ? (
+          <div className="mt-4">
+            <Banner tone="error">{error}</Banner>
           </div>
-          {error ? <Banner tone="error">{error}</Banner> : null}
-          <Button type="submit" disabled={loading || !password}>
-            {loading ? "Signing in…" : "Sign in"}
+        ) : null}
+        <a href="/api/auth/google" className="mt-5 block">
+          <Button type="button" variant="secondary">
+            <GoogleIcon />
+            Sign in with Google
           </Button>
-        </form>
+        </a>
       </Card>
     </main>
+  );
+}
+
+function GoogleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+      <path
+        fill="#EA4335"
+        d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+      />
+      <path
+        fill="#4285F4"
+        d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+      />
+      <path
+        fill="#34A853"
+        d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+      />
+    </svg>
   );
 }
 
@@ -129,19 +148,30 @@ const EMPTY = {
   notes: "",
 };
 
-function AdminApp() {
+function AdminApp({ onSignedOut }: { onSignedOut: () => void }) {
   const [form, setForm] = useState<typeof EMPTY>(EMPTY);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [created, setCreated] = useState<string | null>(null);
   const [links, setLinks] = useState<LinkRow[]>([]);
+  const [user, setUser] = useState<UserInfo | null>(null);
+
+  async function signOut() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      /* signing out client-side regardless */
+    }
+    onSignedOut();
+  }
 
   function loadLinks() {
     fetch("/api/admin/links")
       .then((r) => (r.ok ? r.json() : { gigs: [], defaults: null }))
       .then((d) => {
         setLinks(d.gigs ?? []);
+        if (d.user) setUser(d.user);
         // Prefill the business fields from env defaults (only when still empty,
         // so we never clobber what the admin is typing).
         const def = d.defaults;
@@ -210,7 +240,21 @@ function AdminApp() {
 
   return (
     <main className="mx-auto max-w-lg px-4 py-8">
-      <Logo className="mb-6" />
+      <div className="mb-6 flex items-start justify-between gap-3">
+        <Logo />
+        {user ? (
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="max-w-[180px] truncate text-xs text-dim">{user.email}</span>
+            <button
+              type="button"
+              onClick={signOut}
+              className="rounded-lg px-2.5 py-1.5 text-sm font-medium text-dim hover:bg-elev hover:text-ink"
+            >
+              Sign out
+            </button>
+          </div>
+        ) : null}
+      </div>
       <h1 className="text-2xl font-semibold text-ink">Create an invoice link</h1>
       <p className="mt-1 text-sm text-dim">
         Fill in the shared gig details once, then send the link to your bandmate.
@@ -358,6 +402,9 @@ function AdminApp() {
           </div>
         </section>
       ) : null}
+
+      {user ? <SyncCard hasToken={user.hasSyncToken} /> : null}
+      {user?.isSuperAdmin ? <UsersCard /> : null}
     </main>
   );
 }

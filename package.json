@@ -7,6 +7,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "local": "LOCAL_MODE=1 next dev --hostname 127.0.0.1 --port 3999",
+    "app:dev": "env -u ELECTRON_RUN_AS_NODE ELECTRON_DEV=1 ./electron/node_modules/.bin/electron ./electron --remote-debugging-port=9345",
+    "app:build": "bash electron/build.sh",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"
   },

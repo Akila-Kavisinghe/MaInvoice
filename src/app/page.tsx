@@ -1,7 +1,11 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Card, Logo } from "@/components/ui";
+import { config } from "@/lib/config";
 
 export default function HomePage() {
+  // In local library mode the home page IS the library.
+  if (config.localMode && !process.env.VERCEL) redirect("/library");
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-10">
       <Logo className="mb-6" />

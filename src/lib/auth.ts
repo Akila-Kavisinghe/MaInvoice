@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { cookies } from "next/headers";
 import { config } from "./config";
+import { isEmailAllowed } from "./store";
 
 /**
  * Stateless, HMAC-signed session cookies (no external auth deps).
@@ -10,15 +11,18 @@ import { config } from "./config";
  * verified entirely server-side.
  */
 
-export type Role = "admin" | "band";
+export type Role = "user" | "band";
 
 interface SessionPayload {
   role: Role;
+  /** Present on "user" sessions (Google-authenticated bookkeeping users). */
+  email?: string;
+  name?: string;
   exp: number; // unix seconds
 }
 
 const COOKIE_NAME: Record<Role, string> = {
-  admin: "mi_admin",
+  user: "mi_user",
   band: "mi_band",
 };
 
@@ -62,9 +66,19 @@ function decode(token: string | undefined): SessionPayload | null {
   }
 }
 
-/** Build the signed cookie value for a freshly authenticated role. */
-export function createSessionValue(role: Role): string {
+/** Build the signed cookie value for a freshly authenticated band session. */
+export function createSessionValue(role: "band"): string {
   return encode({ role, exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS });
+}
+
+/** Build the signed cookie value for a Google-authenticated user. */
+export function createUserSessionValue(email: string, name: string): string {
+  return encode({
+    role: "user",
+    email: email.trim().toLowerCase(),
+    name,
+    exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
+  });
 }
 
 export function cookieName(role: Role): string {
@@ -74,11 +88,12 @@ export function cookieName(role: Role): string {
 export function sessionCookieOptions(role: Role) {
   return {
     httpOnly: true,
-    // Band stays "lax" because the unlock flow sets the cookie during a
-    // cross-site top-level navigation (link clicked from an email). The admin
-    // cookie is only ever used by same-origin fetches, so "strict" is safe and
-    // removes it from any cross-site request.
-    sameSite: role === "admin" ? ("strict" as const) : ("lax" as const),
+    // Both cookies are "lax": the band cookie is set during a cross-site
+    // top-level navigation (link clicked from an email), and the user cookie
+    // is set at the end of the Google OAuth redirect chain — a "strict" cookie
+    // would not be sent on the post-login navigation, making sign-in appear to
+    // fail. CSRF is covered by the sameOrigin() check on every mutating route.
+    sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: SESSION_TTL_SECONDS,
@@ -90,6 +105,42 @@ export async function hasValidSession(role: Role): Promise<boolean> {
   const token = (await cookies()).get(COOKIE_NAME[role])?.value;
   const payload = decode(token);
   return payload?.role === role;
+}
+
+export interface UserSession {
+  email: string;
+  name: string;
+  isSuperAdmin: boolean;
+}
+
+/** Decode the signed user cookie. Does NOT check the allowlist — see requireUser. */
+export async function getUserSession(): Promise<UserSession | null> {
+  const token = (await cookies()).get(COOKIE_NAME.user)?.value;
+  const payload = decode(token);
+  if (payload?.role !== "user" || !payload.email) return null;
+  const email = payload.email.trim().toLowerCase();
+  return {
+    email,
+    name: payload.name ?? "",
+    isSuperAdmin: email === config.superAdminEmail,
+  };
+}
+
+/**
+ * Session + live allowlist check. Sessions are stateless (8h), so the
+ * allowlist is re-checked on every request — removing a user locks them out
+ * immediately, not when their cookie expires.
+ */
+export async function requireUser(): Promise<UserSession | null> {
+  const session = await getUserSession();
+  if (!session) return null;
+  if (session.isSuperAdmin) return session;
+  return (await isEmailAllowed(session.email)) ? session : null;
+}
+
+/** Sync tokens are stored server-side only as a SHA-256 hash. */
+export function hashSyncToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
 }
 
 /**
