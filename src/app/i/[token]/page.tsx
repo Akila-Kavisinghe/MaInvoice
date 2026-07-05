@@ -35,8 +35,8 @@ export default async function InvoiceLinkPage({
         <Card className="p-7 text-center">
           <h1 className="text-xl font-bold">Link not found</h1>
           <p className="mt-2 text-slate-600">
-            This invoice link is invalid or has been removed. Please ask the band
-            lead for a new one.
+            This invoice link is invalid or has been removed. Please ask the
+            sender for a new one.
           </p>
         </Card>
       </main>

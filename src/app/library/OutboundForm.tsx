@@ -19,6 +19,8 @@ const EMPTY = {
   notes: "",
 };
 
+const NEW_CLIENT = "__new__";
+
 interface Created {
   entry: LibraryEntry;
   email: { to: string; subject: string; body: string } | null;
@@ -33,23 +35,28 @@ export default function OutboundForm({
   onCreated: () => void;
 }) {
   const [form, setForm] = useState(EMPTY);
+  const [picked, setPicked] = useState(NEW_CLIENT);
+  const [saveContact, setSaveContact] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<Created | null>(null);
   const [loading, setLoading] = useState(false);
 
   function update<K extends keyof typeof EMPTY>(key: K, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
-    // Picking a known contact autofills their details.
-    if (key === "clientName") {
-      const match = contacts.find((c) => c.name === value);
-      if (match) {
-        setForm((f) => ({
-          ...f,
-          clientName: value,
-          clientEmail: f.clientEmail || match.email,
-          clientAddress: f.clientAddress || match.address || "",
-        }));
-      }
+  }
+
+  /** Selecting a contact autofills their saved details. */
+  function pickContact(email: string) {
+    setPicked(email);
+    if (email === NEW_CLIENT) return;
+    const c = contacts.find((x) => x.email === email);
+    if (c) {
+      setForm((f) => ({
+        ...f,
+        clientName: c.name,
+        clientEmail: c.email,
+        clientAddress: c.address ?? "",
+      }));
     }
   }
 
@@ -65,6 +72,7 @@ export default function OutboundForm({
         body: JSON.stringify({
           ...form,
           amount: form.amount === "" ? undefined : Number(form.amount),
+          saveContact,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -79,6 +87,7 @@ export default function OutboundForm({
       }
       setCreated(data);
       setForm(EMPTY);
+      setPicked(NEW_CLIENT);
       onCreated();
     } catch {
       setError("Network error");
@@ -98,20 +107,31 @@ export default function OutboundForm({
       </div>
 
       <form onSubmit={onSubmit} className="mt-4 space-y-4" noValidate>
+        {contacts.length > 0 ? (
+          <div>
+            <Label>Bill to</Label>
+            <select
+              value={picked}
+              onChange={(e) => pickContact(e.target.value)}
+              className="w-full rounded-[10px] border border-hair bg-elev px-3.5 py-3 text-ink outline-none transition focus:border-accent"
+            >
+              <option value={NEW_CLIENT}>New client…</option>
+              {contacts.map((c) => (
+                <option key={c.email} value={c.email}>
+                  {c.name} ({c.email})
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label>Client / venue name</Label>
             <Input
-              list="contact-names"
               value={form.clientName}
               onChange={(e) => update("clientName", e.target.value)}
               placeholder="City Jazz Festival"
             />
-            <datalist id="contact-names">
-              {contacts.map((c) => (
-                <option key={c.email} value={c.name} />
-              ))}
-            </datalist>
           </div>
           <div>
             <Label hint="(optional)">Client email</Label>
@@ -130,6 +150,15 @@ export default function OutboundForm({
             onChange={(e) => update("clientAddress", e.target.value)}
           />
         </div>
+        <label className="flex items-center gap-2.5 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-slate-300"
+            checked={saveContact}
+            onChange={(e) => setSaveContact(e.target.checked)}
+          />
+          Save this client to my contacts (autofills next time)
+        </label>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <Label hint="(optional)">Event name</Label>

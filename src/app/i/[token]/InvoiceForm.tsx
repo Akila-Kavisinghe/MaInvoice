@@ -211,7 +211,7 @@ export default function InvoiceForm({
           <Banner tone="info">
             Already sent one for this event? Generating again{" "}
             <span className="font-semibold">replaces your previous submission</span>{" "}
-            — the band only keeps your most recent invoice, under the same invoice
+            — they only keep your most recent invoice, under the same invoice
             number.
           </Banner>
         </div>
@@ -273,7 +273,7 @@ export default function InvoiceForm({
           <Field
             label="Amount owed"
             error={errors.amount}
-            hint={gig.amountLocked ? "(set by the band)" : undefined}
+            hint={gig.amountLocked ? "(set by the requester)" : undefined}
           >
             <div className="relative">
               <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
@@ -330,7 +330,7 @@ export default function InvoiceForm({
                 Save my details on this device for next time
                 <span className="mt-0.5 block text-xs text-slate-400">
                   Name, email, address, tax # and payment method. Stays only in
-                  this browser — never sent to the band.
+                  this browser — never sent to the requester.
                 </span>
               </span>
             </label>
@@ -359,7 +359,7 @@ export default function InvoiceForm({
         </p>
       ) : (
         <p className="mt-4 text-center text-xs text-slate-400">
-          Your name, email, invoice number and amount are saved so the band can
+          Your name, email, invoice number and amount are saved so the requester can
           track invoices. Your address, tax number and notes appear only on the
           PDF and aren&apos;t stored.
         </p>

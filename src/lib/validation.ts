@@ -127,6 +127,8 @@ export const outboundSchema = z.object({
   dueDate: isoDate.optional().or(z.literal("").transform(() => undefined)),
   paymentInstructions: optionalText,
   notes: optionalText,
+  /** Store/refresh the client's contact card for future autofill. */
+  saveContact: z.boolean().default(true),
 });
 
 export type OutboundInput = z.infer<typeof outboundSchema>;

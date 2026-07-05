@@ -27,8 +27,8 @@ const EMPTY = {
 };
 
 /**
- * Create bandmate invoice links from the local app. The link itself lives on
- * the deployed server (bandmates need a public URL) — this goes through the
+ * Create invoice links from the local app. The link itself lives on
+ * the deployed server (recipients need a public URL) — this goes through the
  * sync token, so no browser sign-in is needed here.
  */
 export default function LinkForm({
@@ -129,7 +129,7 @@ export default function LinkForm({
         <h2 className="text-lg font-semibold text-ink">New invoice link</h2>
         <Banner tone="info">
           Connect to your server first (Settings → Server connection) — links
-          are created there so bandmates can reach them.
+          are created there so recipients can reach them.
         </Banner>
       </Card>
     );
@@ -140,14 +140,14 @@ export default function LinkForm({
       <div>
         <h2 className="text-lg font-semibold text-ink">New invoice link</h2>
         <p className="mt-1 text-sm text-dim">
-          Created on your server; send it to a bandmate so they can submit
+          Created on your server; send it to whoever is invoicing you so they can submit
           their invoice. Your business details are the &quot;Bill to&quot;.
         </p>
       </div>
 
       {created ? (
         <div className="mt-4">
-          <Banner tone="success">Link created! Copy and send it to your bandmate.</Banner>
+          <Banner tone="success">Link created! Copy and send it to the person invoicing you.</Banner>
           <div className="mt-2 flex items-center gap-2">
             <input
               readOnly
@@ -222,7 +222,7 @@ export default function LinkForm({
             checked={form.amountLocked}
             onChange={(e) => update("amountLocked", e.target.checked)}
           />
-          Lock the amount (bandmate can&apos;t change it)
+          Lock the amount (the sender can&apos;t change it)
         </label>
         <div>
           <Label hint="(optional)">Notes / payment instructions</Label>

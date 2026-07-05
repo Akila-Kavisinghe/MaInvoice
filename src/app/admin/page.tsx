@@ -84,7 +84,7 @@ export default function AdminLinksPage() {
         </Link>
       </div>
       <p className="mt-1 text-sm text-dim">
-        Send a link to a bandmate; their submissions appear under it. Revoking
+        Send a link to whoever is invoicing you; their submissions appear under it. Revoking
         archives a link — it can be restored later.
       </p>
 

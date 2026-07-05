@@ -105,19 +105,19 @@ export default function AdminCreatePage() {
     <>
       <h1 className="text-2xl font-semibold text-ink">Create an invoice link</h1>
       <p className="mt-1 text-sm text-dim">
-        Fill in the shared gig details once, then send the link to your bandmate.
+        Fill in the shared details once, then send the link to whoever is invoicing you.
       </p>
 
       {created ? (
         <div className="mt-5">
-          <Banner tone="success">Link created! Copy and send it to your bandmate.</Banner>
+          <Banner tone="success">Link created! Copy and send it to the person invoicing you.</Banner>
           <CopyField value={created} />
         </div>
       ) : null}
 
       <Card className="mt-5 p-5">
         <form onSubmit={onSubmit} className="space-y-4" noValidate>
-          <SectionTitle>Your details (the band)</SectionTitle>
+          <SectionTitle>Your details (who gets billed)</SectionTitle>
           <p className="-mt-2 text-xs text-slate-400">
             Prefilled from your saved business info — edit if needed.
           </p>
@@ -208,7 +208,7 @@ export default function AdminCreatePage() {
               checked={form.amountLocked}
               onChange={(e) => update("amountLocked", e.target.checked)}
             />
-            Lock the amount (bandmate can&apos;t change it)
+            Lock the amount (the sender can&apos;t change it)
           </label>
 
           <F label="Notes / payment instructions" err={errors.notes} hint="(optional)">

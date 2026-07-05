@@ -117,7 +117,7 @@ export function SubmissionsTable({
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="text-xs uppercase tracking-wide text-slate-400">
-                <th className="pb-1 pr-3 font-medium">Bandmate</th>
+                <th className="pb-1 pr-3 font-medium">From</th>
                 <th className="pb-1 pr-3 font-medium">Invoice #</th>
                 <th className="pb-1 pr-3 text-right font-medium">Amount</th>
                 <th className="pb-1 font-medium">When</th>
@@ -211,7 +211,7 @@ export function LinkActions({
           if (
             window.confirm(
               `Revoke the link for "${link.eventName}"?\n\n` +
-                `The link stops working for bandmates, but it moves to your Archived section ` +
+                `The link stops working for its recipient, but it moves to your Archived section ` +
                 `with all its submissions — you can restore it anytime.`,
             )
           ) {

@@ -39,11 +39,12 @@ export async function POST(req: Request) {
     );
   }
 
+  const { saveContact, ...pdfInput } = input;
   const invoiceNumber = generateInvoiceNumber();
   const pdf = await renderOutboundInvoicePdf({
     invoiceNumber,
     business,
-    ...input,
+    ...pdfInput,
   });
 
   const today = new Date().toISOString().slice(0, 10);
@@ -63,7 +64,8 @@ export async function POST(req: Request) {
     contactName: input.clientName,
   });
 
-  if (input.clientEmail) {
+  // Only saved when the user opted in on the form.
+  if (saveContact && input.clientEmail) {
     try {
       await upsertContact({
         email: input.clientEmail,

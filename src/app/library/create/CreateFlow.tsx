@@ -26,7 +26,7 @@ const EMPTY_BUSINESS: BusinessInfo = {
 /**
  * Guided flow: first pick the direction of money, then the tool that fits.
  *   Outbound → generate a PDF invoice to a client.
- *   Inbound  → create a link for a bandmate, or upload a PDF you have.
+ *   Inbound  → create a link for the sender, or upload a PDF you have.
  */
 export default function CreateFlow({ hasFolder }: { hasFolder: boolean }) {
   const [step, setStep] = useState<Step>("direction");
@@ -86,7 +86,7 @@ export default function CreateFlow({ hasFolder }: { hasFolder: boolean }) {
             <ChoiceCard
               emoji="📥"
               title="Inbound"
-              subtitle="Someone is invoicing me — a bandmate submits via link, or I file a PDF I received."
+              subtitle="Someone is invoicing me — they submit via link, or I file a PDF I received."
               onClick={() => setStep("inbound-how")}
             />
             <ChoiceCard
@@ -106,7 +106,7 @@ export default function CreateFlow({ hasFolder }: { hasFolder: boolean }) {
             <ChoiceCard
               emoji="🔗"
               title="Create an invoice link"
-              subtitle="Send a bandmate a prefilled link; their invoice syncs into the library automatically."
+              subtitle="Send someone a prefilled link; their invoice syncs into the library automatically."
               onClick={() => setStep("link")}
             />
             <ChoiceCard

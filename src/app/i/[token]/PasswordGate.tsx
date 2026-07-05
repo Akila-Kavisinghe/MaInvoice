@@ -42,9 +42,9 @@ export default function PasswordGate() {
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full border border-hair bg-elev text-2xl">
             🔒
           </div>
-          <h1 className="text-xl font-semibold text-ink">Enter the band password</h1>
+          <h1 className="text-xl font-semibold text-ink">Enter the shared password</h1>
           <p className="mt-1 text-sm text-dim">
-            This unlocks your invoice form. Ask the band lead if you don&apos;t have it.
+            This unlocks your invoice form. Ask the person who sent you this link if you don&apos;t have it.
           </p>
         </div>
 

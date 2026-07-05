@@ -78,7 +78,7 @@ export default function LinksView() {
           <Link href="/library/create" className="font-medium text-accent">
             create one
           </Link>{" "}
-          and send it to a bandmate.
+          and send it to whoever is invoicing you.
         </Card>
       ) : null}
 

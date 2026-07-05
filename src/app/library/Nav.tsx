@@ -31,6 +31,7 @@ export default function Nav() {
         {tab("/library", "Invoices", true)}
         {tab("/library/links", "Links")}
         {tab("/library/create", "Create")}
+        {tab("/library/contacts", "Contacts")}
         {tab("/library/taxes", "Taxes")}
         <Link
           href="/library/settings"

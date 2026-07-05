@@ -6,7 +6,6 @@ import { Banner, Button, Card } from "@/components/ui";
 import { formatDate, formatMoney } from "@/lib/format";
 import { TAX_CATEGORIES, taxCategoryById } from "@/lib/t2125";
 import type { Contact, LibraryEntry, RemoteInfo } from "./lib-types";
-import ContactsCard from "./ContactsCard";
 import FolderPicker from "./FolderPicker";
 
 interface Feedback {
@@ -171,14 +170,7 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
             (!contactFilter || inv.contactEmail === contactFilter),
         )}
         filtered={direction !== "all" || paidFilter !== "all" || !!contactFilter}
-        onChanged={load}
-      />
-
-      <ContactsCard
-        contacts={contacts}
-        invoices={invoices}
-        activeEmail={contactFilter}
-        onFilter={setContactFilter}
+        knownContactEmails={new Set(contacts.map((c) => c.email))}
         onChanged={load}
       />
     </>
@@ -250,10 +242,12 @@ function FilterBar({
 function InvoiceList({
   invoices,
   filtered,
+  knownContactEmails,
   onChanged,
 }: {
   invoices: LibraryEntry[];
   filtered: boolean;
+  knownContactEmails: Set<string>;
   onChanged: () => void;
 }) {
   if (invoices.length === 0) {
@@ -292,7 +286,12 @@ function InvoiceList({
           </h2>
           <div className="space-y-3">
             {byYear.get(year)!.map((inv) => (
-              <InvoiceRow key={inv.id} invoice={inv} onChanged={onChanged} />
+              <InvoiceRow
+                key={inv.id}
+                invoice={inv}
+                knownContact={!inv.contactEmail || knownContactEmails.has(inv.contactEmail)}
+                onChanged={onChanged}
+              />
             ))}
           </div>
         </div>
@@ -303,9 +302,12 @@ function InvoiceList({
 
 function InvoiceRow({
   invoice,
+  knownContact,
   onChanged,
 }: {
   invoice: LibraryEntry;
+  /** False when the sender has an email but no contact card yet. */
+  knownContact: boolean;
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -492,6 +494,32 @@ function InvoiceRow({
               >
                 Possible capital asset
               </span>
+            ) : null}
+            {!knownContact && invoice.contactEmail ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    await fetch("/api/local/contacts", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        email: invoice.contactEmail,
+                        name: invoice.contactName ?? invoice.bandmateName ?? "",
+                      }),
+                    });
+                    onChanged();
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                className={`${flagButton} bg-accent/10 text-accent hover:brightness-110`}
+                title={`Save ${invoice.contactEmail} as a contact`}
+              >
+                + Add to contacts
+              </button>
             ) : null}
           </div>
           <input
