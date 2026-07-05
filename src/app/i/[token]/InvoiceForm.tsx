@@ -347,7 +347,7 @@ export default function InvoiceForm({
 
           {submitError ? <Banner tone="error">{submitError}</Banner> : null}
 
-          <Button type="submit" disabled={loading}>
+          <Button type="submit" disabled={loading} className="w-full">
             {loading ? "Generating…" : "Generate invoice"}
           </Button>
         </form>

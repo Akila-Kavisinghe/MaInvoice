@@ -222,7 +222,7 @@ export default function AdminCreatePage() {
 
           {submitError ? <Banner tone="error">{submitError}</Banner> : null}
 
-          <Button type="submit" disabled={loading}>
+          <Button type="submit" disabled={loading} className="w-full">
             {loading ? "Creating…" : "Create link"}
           </Button>
         </form>

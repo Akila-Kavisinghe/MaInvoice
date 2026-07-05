@@ -75,8 +75,35 @@ export function CopyField({ value, compact }: { value: string; compact?: boolean
   );
 }
 
-export function SubmissionsTable({ submissions }: { submissions: Submission[] }) {
+export function SubmissionsTable({
+  submissions,
+  onDelete,
+}: {
+  submissions: Submission[];
+  /** When provided, each row gets a delete button (with confirmation). */
+  onDelete?: (s: Submission) => Promise<void>;
+}) {
+  const [busyKey, setBusyKey] = useState<string | null>(null);
   const total = submissions.reduce((sum, s) => sum + s.amount, 0);
+
+  async function remove(s: Submission) {
+    if (
+      !window.confirm(
+        `Delete ${s.bandmateName}'s submission (${s.invoiceNumber}, ${formatMoney(s.amount)}) from this link?\n\n` +
+          `This removes the record permanently — if they resubmit, they'll get a new invoice number. ` +
+          `Any PDF already synced to a library is not affected.`,
+      )
+    ) {
+      return;
+    }
+    setBusyKey(s.bandmateEmail);
+    try {
+      await onDelete?.(s);
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
   return (
     <div className="mt-3 border-t border-slate-100 pt-3">
       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
@@ -93,6 +120,7 @@ export function SubmissionsTable({ submissions }: { submissions: Submission[] })
                 <th className="pb-1 pr-3 font-medium">Invoice #</th>
                 <th className="pb-1 pr-3 text-right font-medium">Amount</th>
                 <th className="pb-1 font-medium">When</th>
+                {onDelete ? <th className="pb-1" /> : null}
               </tr>
             </thead>
             <tbody>
@@ -112,6 +140,19 @@ export function SubmissionsTable({ submissions }: { submissions: Submission[] })
                       day: "numeric",
                     })}
                   </td>
+                  {onDelete ? (
+                    <td className="py-1.5 pl-2 text-right">
+                      <button
+                        type="button"
+                        onClick={() => remove(s)}
+                        disabled={busyKey === s.bandmateEmail}
+                        title="Delete this submission record"
+                        className="rounded px-1.5 py-0.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {busyKey === s.bandmateEmail ? "…" : "✕"}
+                      </button>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>
@@ -123,7 +164,7 @@ export function SubmissionsTable({ submissions }: { submissions: Submission[] })
                 <td className="pt-1.5 text-right text-sm font-semibold text-slate-800">
                   {formatMoney(total)}
                 </td>
-                <td />
+                <td colSpan={onDelete ? 2 : 1} />
               </tr>
             </tfoot>
           </table>

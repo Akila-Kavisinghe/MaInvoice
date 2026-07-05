@@ -24,6 +24,7 @@ export interface StoreBackend {
   saveGig(gig: Gig): Promise<void>;
   listGigs(ownerEmail: string): Promise<Gig[]>;
   addSubmission(token: string, submission: Submission): Promise<void>;
+  removeSubmission(token: string, email: string): Promise<void>;
   deleteGig(token: string): Promise<void>;
   migrateLegacyGigs(superAdminEmail: string): Promise<number>;
 
@@ -80,6 +81,7 @@ export const getPendingInvoice = store.getPendingInvoice;
 // Writes
 export const saveGig = writable(store.saveGig);
 export const addSubmission = writable(store.addSubmission);
+export const removeSubmission = writable(store.removeSubmission);
 export const deleteGig = writable(store.deleteGig);
 export const migrateLegacyGigs = writable(store.migrateLegacyGigs);
 export const addAllowedUser = writable(store.addAllowedUser);

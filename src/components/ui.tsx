@@ -73,8 +73,10 @@ export function Button({
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "ghost";
 }) {
+  // No width in the base: "w-full" from here would beat callers' "w-auto"
+  // (CSS order, not class order, wins) — pass w-full explicitly when needed.
   const base =
-    "inline-flex w-full items-center justify-center gap-2 rounded-[10px] px-4 py-3 text-base font-semibold transition-[transform,filter,background-color,border-color,opacity] duration-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40";
+    "inline-flex items-center justify-center gap-2 rounded-[10px] px-4 py-3 text-base font-semibold transition-[transform,filter,background-color,border-color,opacity] duration-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-40";
   const variants = {
     primary: "bg-primary-grad text-white shadow-soft hover:brightness-[1.08]",
     secondary:

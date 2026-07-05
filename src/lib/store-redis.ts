@@ -133,6 +133,21 @@ export async function addSubmission(
   await redis().hset(SUBS_KEY(token), { [submissionKey(submission)]: submission });
 }
 
+/** Delete one bandmate's submission record from a gig (keyed by email). */
+export async function removeSubmission(token: string, email: string): Promise<void> {
+  const key = email.trim().toLowerCase();
+  const gig = await redis().get<Gig>(GIG_KEY(token));
+  await redis().hdel(SUBS_KEY(token), key);
+  // Legacy records may also embed submissions in the gig object — clean those
+  // too, or combineSubmissions would resurrect the entry on the next read.
+  if (gig?.submissions?.some((s) => submissionKey(s) === key)) {
+    await redis().set(GIG_KEY(token), {
+      ...gig,
+      submissions: gig.submissions.filter((s) => submissionKey(s) !== key),
+    });
+  }
+}
+
 export async function deleteGig(token: string): Promise<void> {
   const gig = await redis().get<Gig>(GIG_KEY(token));
   const deletes: Promise<unknown>[] = [

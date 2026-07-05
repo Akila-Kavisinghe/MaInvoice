@@ -45,7 +45,16 @@ export default function AdminLinksPage() {
                 <RevokeButton token={l.token} eventName={l.eventName} onRevoked={reload} />
               </div>
               <CopyField value={l.url} compact />
-              <SubmissionsTable submissions={l.submissions} />
+              <SubmissionsTable
+                submissions={l.submissions}
+                onDelete={async (s) => {
+                  await fetch(
+                    `/api/admin/submissions?token=${encodeURIComponent(l.token)}&email=${encodeURIComponent(s.bandmateEmail)}`,
+                    { method: "DELETE" },
+                  );
+                  reload();
+                }}
+              />
             </Card>
           ))}
         </div>

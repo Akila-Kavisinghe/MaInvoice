@@ -163,7 +163,7 @@ function SignIn({ error }: { error: string | null }) {
           </div>
         ) : null}
         <a href="/api/auth/google" className="mt-5 block">
-          <Button type="button" variant="secondary">
+          <Button type="button" variant="secondary" className="w-full">
             <GoogleIcon />
             Sign in with Google
           </Button>

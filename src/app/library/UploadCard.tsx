@@ -142,7 +142,7 @@ export default function UploadCard({ onUploaded }: { onUploaded: () => void }) {
         </div>
         {error ? <Banner tone="error">{error}</Banner> : null}
         {success ? <Banner tone="success">Invoice added to your library.</Banner> : null}
-        <Button type="submit" disabled={loading}>
+        <Button type="submit" disabled={loading} className="w-full">
           {loading ? "Adding…" : "Add invoice"}
         </Button>
       </form>

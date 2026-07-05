@@ -3,15 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Banner, Card } from "@/components/ui";
-import { formatDate, formatMoney } from "@/lib/format";
-
-interface Submission {
-  bandmateName: string;
-  bandmateEmail: string;
-  invoiceNumber: string;
-  amount: number;
-  submittedAt: string;
-}
+import { formatDate } from "@/lib/format";
+import { SubmissionsTable, type Submission } from "@/app/admin/components";
 
 interface LinkRow {
   token: string;
@@ -111,58 +104,16 @@ export default function LinksView() {
               </button>
             </div>
 
-            <div className="mt-3 border-t border-slate-100 pt-3">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                Submitted ({l.submissions.length})
-              </p>
-              {l.submissions.length === 0 ? (
-                <p className="text-sm text-slate-400">No submissions yet.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr className="text-xs uppercase tracking-wide text-slate-400">
-                        <th className="pb-1 pr-3 font-medium">Bandmate</th>
-                        <th className="pb-1 pr-3 font-medium">Invoice #</th>
-                        <th className="pb-1 pr-3 text-right font-medium">Amount</th>
-                        <th className="pb-1 font-medium">When</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {l.submissions.map((s, i) => (
-                        <tr key={i} className="border-t border-slate-100 align-top">
-                          <td className="py-1.5 pr-3">
-                            <div className="font-medium text-slate-800">{s.bandmateName}</div>
-                            <div className="truncate text-xs text-slate-400">{s.bandmateEmail}</div>
-                          </td>
-                          <td className="py-1.5 pr-3 text-slate-600">{s.invoiceNumber}</td>
-                          <td className="py-1.5 pr-3 text-right text-slate-800">
-                            {formatMoney(s.amount)}
-                          </td>
-                          <td className="py-1.5 text-xs text-slate-500">
-                            {new Date(s.submittedAt).toLocaleDateString("en-CA", {
-                              month: "short",
-                              day: "numeric",
-                            })}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t border-slate-200">
-                        <td className="pt-1.5 text-xs font-semibold text-slate-500" colSpan={2}>
-                          Total
-                        </td>
-                        <td className="pt-1.5 text-right text-sm font-semibold text-slate-800">
-                          {formatMoney(l.submissions.reduce((sum, s) => sum + s.amount, 0))}
-                        </td>
-                        <td />
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              )}
-            </div>
+            <SubmissionsTable
+              submissions={l.submissions}
+              onDelete={async (s) => {
+                await fetch(
+                  `/api/local/submissions?token=${encodeURIComponent(l.token)}&email=${encodeURIComponent(s.bandmateEmail)}`,
+                  { method: "DELETE" },
+                );
+                load();
+              }}
+            />
           </Card>
         ))}
       </div>

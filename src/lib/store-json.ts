@@ -112,6 +112,20 @@ export async function addSubmission(
   });
 }
 
+/** Delete one bandmate's submission record from a gig (keyed by email). */
+export async function removeSubmission(token: string, email: string): Promise<void> {
+  const key = email.trim().toLowerCase();
+  await chained(async () => {
+    const db = await readDb();
+    const gig = db[token];
+    if (!gig?.submissions) return;
+    gig.submissions = gig.submissions.filter(
+      (s) => s.bandmateEmail.trim().toLowerCase() !== key,
+    );
+    await writeJson(DATA_FILE, db);
+  });
+}
+
 export async function deleteGig(token: string): Promise<void> {
   await chained(async () => {
     const db = await readDb();

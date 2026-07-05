@@ -196,7 +196,11 @@ export default function OutboundForm({
         {error ? <Banner tone="error">{error}</Banner> : null}
         {created ? <CreatedBanner created={created} /> : null}
 
-        <Button type="submit" disabled={loading || !form.clientName || !form.description || !form.amount}>
+        <Button
+          type="submit"
+          disabled={loading || !form.clientName || !form.description || !form.amount}
+          className="w-full"
+        >
           {loading ? "Generating…" : "Generate invoice"}
         </Button>
       </form>

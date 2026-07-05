@@ -229,6 +229,7 @@ export default function LinkForm({
         <Button
           type="submit"
           disabled={loading || !form.eventName || !form.eventDate || !form.paymentDescription}
+          className="w-full"
         >
           {loading ? "Creating…" : "Create link"}
         </Button>

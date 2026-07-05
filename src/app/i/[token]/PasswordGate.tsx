@@ -64,7 +64,7 @@ export default function PasswordGate() {
             <FieldError message={error ?? undefined} />
           </div>
           {error ? <Banner tone="error">{error}</Banner> : null}
-          <Button type="submit" disabled={loading || !password}>
+          <Button type="submit" disabled={loading || !password} className="w-full">
             {loading ? "Checking…" : "Unlock"}
           </Button>
         </form>
