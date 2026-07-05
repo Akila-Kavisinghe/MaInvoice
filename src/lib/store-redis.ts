@@ -148,6 +148,16 @@ export async function removeSubmission(token: string, email: string): Promise<vo
   }
 }
 
+/** Archive (revoke) or restore a link. Archived gigs keep their submissions. */
+export async function setGigArchived(token: string, archived: boolean): Promise<void> {
+  const gig = await redis().get<Gig>(GIG_KEY(token));
+  if (!gig) return;
+  const next = { ...gig };
+  if (archived) next.archivedAt = new Date().toISOString();
+  else delete next.archivedAt;
+  await redis().set(GIG_KEY(token), next);
+}
+
 export async function deleteGig(token: string): Promise<void> {
   const gig = await redis().get<Gig>(GIG_KEY(token));
   const deletes: Promise<unknown>[] = [

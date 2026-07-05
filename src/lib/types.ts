@@ -10,6 +10,12 @@ export interface Gig {
    * super admin on their next visit (see migrateLegacyGigs).
    */
   ownerEmail?: string;
+  /**
+   * Set when the link is revoked (archived): the bandmate-facing link stops
+   * working, but the record and its submissions are kept and the link can be
+   * restored. Permanent deletion is a separate, explicit action.
+   */
+  archivedAt?: string;
 
   // ---- Payee (the admin / band — who is billed) ----
   payeeName: string; // business name

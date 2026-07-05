@@ -9,6 +9,7 @@ import {
   listGigs,
   migrateLegacyGigs,
   saveGig,
+  setGigArchived,
 } from "@/lib/store";
 import { gigCreateSchema } from "@/lib/validation";
 import type { Gig } from "@/lib/types";
@@ -48,10 +49,37 @@ export async function GET() {
       eventName: g.eventName,
       eventDate: g.eventDate,
       createdAt: g.createdAt,
+      archivedAt: g.archivedAt ?? null,
       url: `${baseUrl}/i/${g.token}?k=${createUnlockKey(g.token)}`,
       submissions: g.submissions ?? [],
     })),
   });
+}
+
+/** Archive (revoke) or restore a link: { token, archived: boolean }. */
+export async function PATCH(req: Request) {
+  if (!sameOrigin(req)) {
+    return NextResponse.json({ error: "Bad origin" }, { status: 403 });
+  }
+  const session = await requireUser();
+  if (!session) return unauthorized();
+
+  const body = (await req.json().catch(() => null)) as {
+    token?: string;
+    archived?: boolean;
+  } | null;
+  if (!body?.token || typeof body.archived !== "boolean") {
+    return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+  }
+
+  const gig = await getGig(body.token);
+  if (!gig) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if ((gig.ownerEmail ?? config.superAdminEmail) !== session.email) {
+    return NextResponse.json({ error: "Not your link" }, { status: 403 });
+  }
+
+  await setGigArchived(body.token, body.archived);
+  return NextResponse.json({ ok: true });
 }
 
 export async function POST(req: Request) {
@@ -105,8 +133,8 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: "Not your link" }, { status: 403 });
   }
 
-  // Deleting a gig revokes its link: the page 404s and the unlock key no longer
-  // resolves to anything.
+  // Permanent deletion (used from the archive): removes the gig AND its
+  // submission history. Archiving (PATCH) is the reversible revoke.
   await deleteGig(token);
   return NextResponse.json({ ok: true });
 }

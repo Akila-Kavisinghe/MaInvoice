@@ -25,6 +25,7 @@ export interface LinkRow {
   eventName: string;
   eventDate: string;
   createdAt: string;
+  archivedAt: string | null;
   url: string;
   submissions: Submission[];
 }
@@ -174,42 +175,85 @@ export function SubmissionsTable({
   );
 }
 
-export function RevokeButton({
-  token,
-  eventName,
-  onRevoked,
+/**
+ * Revoke = archive (reversible: the link stops working but stays listed under
+ * Archived with its submissions). Permanent deletion only exists on archived
+ * links, behind its own scarier confirmation.
+ */
+export function LinkActions({
+  link,
+  onArchive,
+  onRestore,
+  onDeleteForever,
 }: {
-  token: string;
-  eventName: string;
-  onRevoked: () => void;
+  link: LinkRow;
+  onArchive: () => Promise<void>;
+  onRestore: () => Promise<void>;
+  onDeleteForever: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
-  async function revoke() {
-    if (
-      !window.confirm(
-        `Revoke the link for "${eventName}"? Anyone who still has it will lose access.`,
-      )
-    ) {
-      return;
-    }
+
+  async function run(fn: () => Promise<void>) {
     setBusy(true);
     try {
-      const res = await fetch(`/api/admin/links?token=${encodeURIComponent(token)}`, {
-        method: "DELETE",
-      });
-      if (res.ok) onRevoked();
+      await fn();
     } finally {
       setBusy(false);
     }
   }
+
+  if (!link.archivedAt) {
+    return (
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          if (
+            window.confirm(
+              `Revoke the link for "${link.eventName}"?\n\n` +
+                `The link stops working for bandmates, but it moves to your Archived section ` +
+                `with all its submissions — you can restore it anytime.`,
+            )
+          ) {
+            run(onArchive);
+          }
+        }}
+        className="shrink-0 rounded-lg px-2.5 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+      >
+        {busy ? "…" : "Revoke"}
+      </button>
+    );
+  }
+
   return (
-    <button
-      type="button"
-      onClick={revoke}
-      disabled={busy}
-      className="shrink-0 rounded-lg px-2.5 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-    >
-      {busy ? "Revoking…" : "Revoke"}
-    </button>
+    <div className="flex shrink-0 items-center gap-1">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => run(onRestore)}
+        className="rounded-lg px-2.5 py-1.5 text-sm font-medium text-accent hover:bg-elev disabled:opacity-50"
+      >
+        {busy ? "…" : "Restore"}
+      </button>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          if (
+            window.confirm(
+              `Permanently delete "${link.eventName}"?\n\n` +
+                `This erases the link AND its ${link.submissions.length} submission record` +
+                `${link.submissions.length === 1 ? "" : "s"} from the server forever. ` +
+                `This cannot be undone. (PDFs already synced to a library are not affected.)`,
+            )
+          ) {
+            run(onDeleteForever);
+          }
+        }}
+        className="rounded-lg px-2.5 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+      >
+        {busy ? "…" : "Delete forever"}
+      </button>
+    </div>
   );
 }

@@ -126,6 +126,18 @@ export async function removeSubmission(token: string, email: string): Promise<vo
   });
 }
 
+/** Archive (revoke) or restore a link. Archived gigs keep their submissions. */
+export async function setGigArchived(token: string, archived: boolean): Promise<void> {
+  await chained(async () => {
+    const db = await readDb();
+    const gig = db[token];
+    if (!gig) return;
+    if (archived) gig.archivedAt = new Date().toISOString();
+    else delete gig.archivedAt;
+    await writeJson(DATA_FILE, db);
+  });
+}
+
 export async function deleteGig(token: string): Promise<void> {
   await chained(async () => {
     const db = await readDb();

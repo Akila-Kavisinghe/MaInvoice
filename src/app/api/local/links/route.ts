@@ -34,21 +34,21 @@ export async function GET() {
   return NextResponse.json(await res.json().catch(() => ({})), { status: res.status });
 }
 
-export async function POST(req: Request) {
-  const gate = localModeUnavailable();
-  if (gate) return gate;
+async function forward(req: Request, method: "POST" | "PATCH" | "DELETE") {
   if (!sameOrigin(req)) {
     return NextResponse.json({ error: "Bad origin" }, { status: 403 });
   }
   const remote = resolveRemoteSync();
   if (!remote) return notConfigured();
 
-  const body = await req.text();
-  const res = await fetch(`${remote.url}/api/sync/links`, {
-    method: "POST",
+  const params = new URL(req.url).searchParams.toString();
+  const target = `${remote.url}/api/sync/links${params ? `?${params}` : ""}`;
+  const body = method === "DELETE" ? undefined : await req.text();
+  const res = await fetch(target, {
+    method,
     headers: {
       Authorization: `Bearer ${remote.token}`,
-      "Content-Type": "application/json",
+      ...(body ? { "Content-Type": "application/json" } : {}),
     },
     body,
   }).catch(() => null);
@@ -56,4 +56,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Could not reach the server" }, { status: 502 });
   }
   return NextResponse.json(await res.json().catch(() => ({})), { status: res.status });
+}
+
+export async function POST(req: Request) {
+  const gate = localModeUnavailable();
+  if (gate) return gate;
+  return forward(req, "POST");
+}
+
+export async function PATCH(req: Request) {
+  const gate = localModeUnavailable();
+  if (gate) return gate;
+  return forward(req, "PATCH");
+}
+
+export async function DELETE(req: Request) {
+  const gate = localModeUnavailable();
+  if (gate) return gate;
+  return forward(req, "DELETE");
 }

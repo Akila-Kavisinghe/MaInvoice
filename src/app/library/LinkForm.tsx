@@ -10,6 +10,7 @@ interface LinkRow {
   eventName: string;
   eventDate: string;
   createdAt: string;
+  archivedAt?: string | null;
   url: string;
   submissions: { bandmateName: string; amount: number }[];
 }
@@ -47,7 +48,11 @@ export default function LinkForm({
   const loadLinks = useCallback(() => {
     fetch("/api/local/links")
       .then((r) => (r.ok ? r.json() : { links: null }))
-      .then((d) => setLinks(d.links ?? null))
+      .then((d) =>
+        setLinks(
+          d.links ? d.links.filter((l: LinkRow) => !l.archivedAt) : null,
+        ),
+      )
       .catch(() => {});
   }, []);
 

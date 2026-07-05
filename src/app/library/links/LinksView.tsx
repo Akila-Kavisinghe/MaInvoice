@@ -4,16 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Banner, Card } from "@/components/ui";
 import { formatDate } from "@/lib/format";
-import { SubmissionsTable, type Submission } from "@/app/admin/components";
-
-interface LinkRow {
-  token: string;
-  eventName: string;
-  eventDate: string;
-  createdAt: string;
-  url: string;
-  submissions: Submission[];
-}
+import {
+  LinkActions,
+  SubmissionsTable,
+  type LinkRow,
+} from "@/app/admin/components";
 
 /**
  * Read-only view of the links living on the server and who has submitted.
@@ -87,36 +82,103 @@ export default function LinksView() {
         </Card>
       ) : null}
 
-      <div className="mt-6 space-y-3">
-        {(links ?? []).map((l) => (
-          <Card key={l.token} className="p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate font-semibold text-slate-800">{l.eventName}</p>
-                <p className="text-xs text-slate-500">{formatDate(l.eventDate)}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => copy(l.url)}
-                className="shrink-0 rounded-lg px-2.5 py-1.5 text-sm font-medium text-accent hover:bg-elev"
-              >
-                {copied === l.url ? "Copied" : "Copy link"}
-              </button>
-            </div>
+      <LinkSections links={links ?? []} copied={copied} onCopy={copy} onChanged={load} />
+    </>
+  );
+}
 
-            <SubmissionsTable
-              submissions={l.submissions}
-              onDelete={async (s) => {
-                await fetch(
-                  `/api/local/submissions?token=${encodeURIComponent(l.token)}&email=${encodeURIComponent(s.bandmateEmail)}`,
-                  { method: "DELETE" },
-                );
-                load();
-              }}
-            />
-          </Card>
-        ))}
+function LinkSections({
+  links,
+  copied,
+  onCopy,
+  onChanged,
+}: {
+  links: LinkRow[];
+  copied: string | null;
+  onCopy: (url: string) => void;
+  onChanged: () => void;
+}) {
+  const active = links.filter((l) => !l.archivedAt);
+  const archived = links.filter((l) => l.archivedAt);
+
+  async function setArchived(token: string, archivedFlag: boolean) {
+    await fetch("/api/local/links", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token, archived: archivedFlag }),
+    });
+    onChanged();
+  }
+
+  async function deleteForever(token: string) {
+    await fetch(`/api/local/links?token=${encodeURIComponent(token)}`, {
+      method: "DELETE",
+    });
+    onChanged();
+  }
+
+  const row = (l: LinkRow) => (
+    <Card key={l.token} className={`p-4 ${l.archivedAt ? "opacity-75" : ""}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-slate-800">
+            {l.eventName}
+            {l.archivedAt ? (
+              <span className="ml-2 rounded bg-elev px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wide text-dim">
+                Archived
+              </span>
+            ) : null}
+          </p>
+          <p className="text-xs text-slate-500">
+            {formatDate(l.eventDate)}
+            {l.archivedAt ? ` · revoked ${formatDate(l.archivedAt.slice(0, 10))}` : ""}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {!l.archivedAt ? (
+            <button
+              type="button"
+              onClick={() => onCopy(l.url)}
+              className="rounded-lg px-2.5 py-1.5 text-sm font-medium text-accent hover:bg-elev"
+            >
+              {copied === l.url ? "Copied" : "Copy link"}
+            </button>
+          ) : null}
+          <LinkActions
+            link={l}
+            onArchive={() => setArchived(l.token, true)}
+            onRestore={() => setArchived(l.token, false)}
+            onDeleteForever={() => deleteForever(l.token)}
+          />
+        </div>
       </div>
+
+      <SubmissionsTable
+        submissions={l.submissions}
+        onDelete={async (s) => {
+          await fetch(
+            `/api/local/submissions?token=${encodeURIComponent(l.token)}&email=${encodeURIComponent(s.bandmateEmail)}`,
+            { method: "DELETE" },
+          );
+          onChanged();
+        }}
+      />
+    </Card>
+  );
+
+  return (
+    <>
+      {active.length > 0 ? (
+        <div className="mt-6 space-y-3">{active.map(row)}</div>
+      ) : null}
+      {archived.length > 0 ? (
+        <section className="mt-8">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">
+            Archived
+          </h2>
+          <div className="space-y-3">{archived.map(row)}</div>
+        </section>
+      ) : null}
     </>
   );
 }

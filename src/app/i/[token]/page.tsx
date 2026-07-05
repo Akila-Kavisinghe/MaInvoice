@@ -16,7 +16,9 @@ export default async function InvoiceLinkPage({
 }) {
   const { token } = await params;
   const { k } = await searchParams;
-  const gig = await getGig(token);
+  const found = await getGig(token);
+  // Archived (revoked) links behave exactly like deleted ones for bandmates.
+  const gig = found && !found.archivedAt ? found : null;
 
   // Per-link auto-unlock: if the share link carries a key and there's no band
   // session yet, hand off to the unlock route to verify it and set the cookie,

@@ -37,7 +37,8 @@ export async function POST(
 
   const { token } = await params;
   const gig = await getGig(token);
-  if (!gig) {
+  // Archived (revoked) links are dead for bandmates until restored.
+  if (!gig || gig.archivedAt) {
     return NextResponse.json({ error: "Invoice link not found" }, { status: 404 });
   }
 

@@ -22,9 +22,9 @@ export async function GET(req: Request) {
 
   const clean = new URL(`/i/${encodeURIComponent(token)}`, url.origin);
 
-  // Only unlock for a real gig with a valid per-link key.
+  // Only unlock for a real, non-archived gig with a valid per-link key.
   const gig = token ? await getGig(token) : null;
-  if (!gig || !verifyUnlockKey(token, key)) {
+  if (!gig || gig.archivedAt || !verifyUnlockKey(token, key)) {
     return NextResponse.redirect(clean); // falls through to the password gate
   }
 

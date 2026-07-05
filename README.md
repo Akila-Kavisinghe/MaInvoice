@@ -250,8 +250,10 @@ Set `NEXT_PUBLIC_BASE_URL` to your real domain so generated links are correct.
 - **Data minimisation.** Admin-created gig details are persisted, plus a minimal
   per-submission record for tracking — **bandmate name, email, invoice number,
   amount, and timestamp only**. Address, tax number, payment method and notes are
-  *not* stored; they exist only in the generated PDF. Revoking (deleting) a gig
-  removes its submission records too.
+  *not* stored; they exist only in the generated PDF. Revoking a gig archives
+  it — the link stops working but the record and submissions are kept and it
+  can be restored; "Delete forever" (available on archived links) removes the
+  gig and its submission records permanently.
 
 ---
 

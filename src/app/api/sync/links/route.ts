@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { createUnlockKey } from "@/lib/auth";
 import { syncUser } from "@/lib/sync-auth";
 import { config } from "@/lib/config";
-import { listGigs, saveGig } from "@/lib/store";
+import { deleteGig, getGig, listGigs, saveGig, setGigArchived } from "@/lib/store";
 import { gigCreateSchema } from "@/lib/validation";
 import { clientIp, rateLimit } from "@/lib/ratelimit";
 import type { Gig } from "@/lib/types";
@@ -46,10 +46,49 @@ export async function GET(req: Request) {
       eventName: g.eventName,
       eventDate: g.eventDate,
       createdAt: g.createdAt,
+      archivedAt: g.archivedAt ?? null,
       url: `${baseUrl}/i/${g.token}?k=${createUnlockKey(g.token)}`,
       submissions: g.submissions ?? [],
     })),
   });
+}
+
+/** Archive (revoke) or restore one of the token owner's links. */
+export async function PATCH(req: Request) {
+  const { email, error } = await guard(req);
+  if (!email) return error;
+
+  const body = (await req.json().catch(() => null)) as {
+    token?: string;
+    archived?: boolean;
+  } | null;
+  if (!body?.token || typeof body.archived !== "boolean") {
+    return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+  }
+
+  const gig = await getGig(body.token);
+  if (!gig || (gig.ownerEmail ?? config.superAdminEmail) !== email) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  await setGigArchived(body.token, body.archived);
+  return NextResponse.json({ ok: true });
+}
+
+/** Permanently delete one of the token owner's links (submissions included). */
+export async function DELETE(req: Request) {
+  const { email, error } = await guard(req);
+  if (!email) return error;
+
+  const token = new URL(req.url).searchParams.get("token");
+  if (!token) {
+    return NextResponse.json({ error: "Missing token" }, { status: 400 });
+  }
+  const gig = await getGig(token);
+  if (!gig || (gig.ownerEmail ?? config.superAdminEmail) !== email) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  await deleteGig(token);
+  return NextResponse.json({ ok: true });
 }
 
 export async function POST(req: Request) {
