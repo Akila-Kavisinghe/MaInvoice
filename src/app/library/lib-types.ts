@@ -17,7 +17,19 @@ export interface LibraryEntry {
   receiptPath?: string;
   paidAt?: string;
   taxCategory?: string;
+  /** Custom category tag name — its T2125 mapping wins over taxCategory. */
+  categoryTag?: string;
+  /** Free-form grouping tags. */
+  eventTags?: string[];
+  /** Set while a copy of this synced invoice still exists on the website. */
+  pendingId?: string;
   addedAt: string;
+}
+
+export interface CategoryTag {
+  name: string;
+  taxCategory: string;
+  createdAt: string;
 }
 
 export interface Contact {

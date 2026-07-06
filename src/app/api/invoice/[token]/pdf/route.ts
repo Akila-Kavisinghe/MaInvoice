@@ -98,7 +98,7 @@ export async function POST(
 
   // Retain the PDF server-side so the owner's local library app can pull it
   // into their invoice folder (deleted once the local app acks the download,
-  // or after 30 days). Best-effort — never blocks delivery to the bandmate.
+  // or after 90 days). Best-effort — never blocks delivery to the bandmate.
   try {
     // Base64 inflates ~33%; keep well under Upstash's 1MB request cap. These
     // text-only PDFs are typically tens of KB. If the template ever embeds

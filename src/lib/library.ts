@@ -46,12 +46,27 @@ export interface LibraryEntry {
   /** Set when a receipt is attached or the row is manually marked paid. */
   paidAt?: string; // ISO timestamp
   /**
+   * Server pending-invoice id this entry was synced from. While present, a
+   * copy of the PDF still exists on the website — it is only deleted there
+   * after the user explicitly confirms removal (or the server's 90-day TTL
+   * expires). Also used to dedupe repeat syncs.
+   */
+  pendingId?: string;
+  /**
    * T2125 reporting category (expense-side entries only — outbound invoices
    * are income), assigned manually by the user. See src/lib/t2125.ts.
    * "capital-assets" marks purchases that may need CCA treatment instead of
    * full expensing.
    */
   taxCategory?: string;
+  /**
+   * Custom category tag NAME (see src/lib/tags.ts). When set and the tag
+   * still exists, its mapped T2125 category takes precedence over
+   * taxCategory on the tax summary.
+   */
+  categoryTag?: string;
+  /** Free-form grouping tags ("Summer Tour 2026") for slicing expenses. */
+  eventTags?: string[];
   addedAt: string; // ISO timestamp
 }
 
@@ -64,6 +79,7 @@ export interface LibraryMeta {
   notes?: string;
   contactEmail?: string;
   contactName?: string;
+  pendingId?: string;
 }
 
 interface Manifest {
@@ -217,6 +233,26 @@ async function uniquePath(
   throw new Error(`Too many filename collisions for ${base}${ext}`);
 }
 
+/**
+ * macOS/Windows filesystems are case-insensitive: mkdir "…Fifa…" silently
+ * lands in an existing "…FIFA…" folder. Manifest paths must record the
+ * on-disk casing or exact-string comparisons (unindexed scan, dedupe)
+ * misfire and produce duplicate entries. Call only after the dir exists.
+ */
+async function actualCaseRelDir(relDir: string): Promise<string> {
+  try {
+    const [rootReal, dirReal] = await Promise.all([
+      fs.realpath(root()),
+      fs.realpath(resolveSafe(relDir)),
+    ]);
+    const rel = path.relative(rootReal, dirReal);
+    if (!rel || rel.startsWith("..")) return relDir;
+    return rel.split(path.sep).join("/");
+  } catch {
+    return relDir;
+  }
+}
+
 /** Write a PDF into the folder and index it. Returns the manifest entry. */
 export async function addInvoice(
   pdf: Buffer,
@@ -226,8 +262,8 @@ export async function addInvoice(
   meta: LibraryMeta,
 ): Promise<LibraryEntry> {
   return chained(async () => {
-    const relDir = destinationDir(direction, meta);
-    await fs.mkdir(resolveSafe(relDir), { recursive: true });
+    await fs.mkdir(resolveSafe(destinationDir(direction, meta)), { recursive: true });
+    const relDir = await actualCaseRelDir(destinationDir(direction, meta));
     const base = sanitizeSegment(filename.replace(/\.pdf$/i, ""));
     const relPath = await uniquePath(relDir, base, ".pdf");
     await fs.writeFile(resolveSafe(relPath), pdf);
@@ -263,7 +299,10 @@ export async function indexFile(
     const manifest = await readManifestRaw();
     const normalized = relPath.split(path.sep).join("/");
     for (const entry of Object.values(manifest.invoices)) {
-      if (entry.relPath === normalized) return entry; // already indexed
+      // Case-insensitive: an entry may record different casing than disk.
+      if (entry.relPath.toLowerCase() === normalized.toLowerCase()) {
+        return entry; // already indexed
+      }
     }
     const entry: LibraryEntry = {
       id: crypto.randomUUID(),
@@ -283,7 +322,21 @@ export async function indexFile(
 /** Update mutable flags/fields on an entry. Returns the updated entry. */
 export async function updateInvoice(
   id: string,
-  patch: { emailReceived?: boolean; paid?: boolean; taxCategory?: string | null },
+  patch: {
+    emailReceived?: boolean;
+    paid?: boolean;
+    taxCategory?: string | null;
+    categoryTag?: string | null;
+    eventTags?: string[];
+    // Detail edits: undefined = untouched, "" (or null amount) = cleared.
+    eventName?: string;
+    eventDate?: string;
+    contactName?: string;
+    contactEmail?: string;
+    invoiceNumber?: string;
+    amount?: number | null;
+    notes?: string;
+  },
 ): Promise<LibraryEntry | null> {
   return chained(async () => {
     const manifest = await readManifestRaw();
@@ -299,7 +352,82 @@ export async function updateInvoice(
     if (patch.taxCategory !== undefined) {
       entry.taxCategory = patch.taxCategory ?? undefined;
     }
+    if (patch.categoryTag !== undefined) {
+      entry.categoryTag = patch.categoryTag || undefined;
+    }
+    if (patch.eventTags !== undefined) {
+      const tags = [...new Set(patch.eventTags.map((t) => t.trim()).filter(Boolean))];
+      entry.eventTags = tags.length ? tags : undefined;
+    }
+
+    if (patch.eventName !== undefined) entry.eventName = patch.eventName || undefined;
+    if (patch.eventDate !== undefined) entry.eventDate = patch.eventDate || undefined;
+    if (patch.contactName !== undefined) {
+      entry.contactName = patch.contactName || undefined;
+    }
+    if (patch.contactEmail !== undefined) {
+      entry.contactEmail = patch.contactEmail ? patch.contactEmail.toLowerCase() : undefined;
+    }
+    if (patch.invoiceNumber !== undefined) {
+      entry.invoiceNumber = patch.invoiceNumber || undefined;
+    }
+    if (patch.amount !== undefined) entry.amount = patch.amount ?? undefined;
+    if (patch.notes !== undefined) entry.notes = patch.notes || undefined;
+
+    // The folder is derived from the event ("<year>/<date event>/"), so an
+    // event edit re-files the PDF (and its receipt). Best-effort: if a move
+    // fails the entry keeps its old path — metadata is still updated.
+    if (patch.eventName !== undefined || patch.eventDate !== undefined) {
+      const wantedDir = destinationDir(entry.direction ?? "inbound", {
+        eventName: entry.eventName,
+        eventDate: entry.eventDate,
+      });
+      const oldDir = path.posix.dirname(entry.relPath);
+      await fs.mkdir(resolveSafe(wantedDir), { recursive: true }).catch(() => {});
+      // Canonical on-disk casing — a case-only event edit resolves to the
+      // SAME physical folder, and moving a file onto itself would trip the
+      // collision suffix and duplicate it.
+      const newDir = await actualCaseRelDir(wantedDir);
+      if (newDir.toLowerCase() !== oldDir.toLowerCase()) {
+        for (const key of ["relPath", "receiptPath"] as const) {
+          const rel = entry[key];
+          if (!rel) continue;
+          try {
+            const ext = path.posix.extname(rel);
+            const base = path.posix.basename(rel, ext);
+            const newRel = await uniquePath(newDir, base, ext);
+            await fs.rename(resolveSafe(rel), resolveSafe(newRel));
+            entry[key] = newRel; // recorded per file, right after its rename
+          } catch (err) {
+            console.error("library: couldn't re-file", rel, err);
+          }
+        }
+        // Drop the old event folder if the moves emptied it.
+        await fs.rmdir(resolveSafe(oldDir)).catch(() => {});
+      }
+    }
+
     await writeManifest(manifest);
+    return entry;
+  });
+}
+
+/** Look up one entry without touching its file. */
+export async function getInvoiceEntry(id: string): Promise<LibraryEntry | null> {
+  const manifest = await readManifest();
+  return manifest.invoices[id] ?? null;
+}
+
+/** The user confirmed the website copy was removed — stop tracking it. */
+export async function clearServerCopy(id: string): Promise<LibraryEntry | null> {
+  return chained(async () => {
+    const manifest = await readManifestRaw();
+    const entry = manifest.invoices[id];
+    if (!entry) return null;
+    if (entry.pendingId) {
+      entry.pendingId = undefined;
+      await writeManifest(manifest);
+    }
     return entry;
   });
 }
@@ -319,10 +447,12 @@ export async function listInvoices(): Promise<LibraryEntry[]> {
  */
 export async function scanUnindexed(): Promise<string[]> {
   const manifest = await readManifest();
+  // Lowercased: on case-insensitive filesystems the on-disk casing can
+  // legitimately differ from the manifest's.
   const indexed = new Set<string>();
   for (const e of Object.values(manifest.invoices)) {
-    indexed.add(e.relPath);
-    if (e.receiptPath) indexed.add(e.receiptPath);
+    indexed.add(e.relPath.toLowerCase());
+    if (e.receiptPath) indexed.add(e.receiptPath.toLowerCase());
   }
   const found: string[] = [];
 
@@ -338,7 +468,7 @@ export async function scanUnindexed(): Promise<string[]> {
       const rel = relDir ? path.posix.join(relDir, entry.name) : entry.name;
       if (entry.isDirectory()) {
         await walk(rel);
-      } else if (/\.pdf$/i.test(entry.name) && !indexed.has(rel)) {
+      } else if (/\.pdf$/i.test(entry.name) && !indexed.has(rel.toLowerCase())) {
         found.push(rel);
       }
     }
@@ -394,6 +524,8 @@ export async function attachReceipt(
   id: string,
   file: Buffer,
   originalFilename: string,
+  /** yyyy-mm-dd the payment happened; defaults to today. */
+  paidDate?: string,
 ): Promise<LibraryEntry | null> {
   return chained(async () => {
     const manifest = await readManifestRaw();
@@ -422,7 +554,10 @@ export async function attachReceipt(
     await fs.writeFile(resolveSafe(relPath), file);
 
     entry.receiptPath = relPath;
-    entry.paidAt = new Date().toISOString();
+    // Noon UTC keeps the chosen calendar date stable in every timezone.
+    entry.paidAt = paidDate
+      ? `${paidDate}T12:00:00.000Z`
+      : new Date().toISOString();
     await writeManifest(manifest);
     return entry;
   });

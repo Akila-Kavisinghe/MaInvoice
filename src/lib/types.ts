@@ -78,7 +78,7 @@ export interface AllowedUser {
 
 /**
  * A generated invoice PDF retained server-side until the owner's local app
- * pulls it into their invoice folder (then it is deleted). Expires after 30
+ * pulls it into their invoice folder (then it is deleted). Expires after 90
  * days if never synced — the PDF contains bandmate details we don't want to
  * hold indefinitely.
  */

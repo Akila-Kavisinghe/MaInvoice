@@ -149,7 +149,7 @@ export default function CreateFlow({ hasFolder }: { hasFolder: boolean }) {
       {step === "upload" ? (
         <>
           {back("inbound-how", "Back")}
-          <UploadCard onUploaded={() => {}} />
+          <UploadCard contacts={contacts} onUploaded={() => {}} />
         </>
       ) : null}
     </>

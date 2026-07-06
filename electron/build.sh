@@ -26,4 +26,9 @@ if [ ! -d node_modules ]; then
 fi
 pnpm exec electron-builder
 
+# electron-builder silently skips missing extraResources — fail loudly if the
+# server bundle didn't make it into the app.
+test -f "dist/mac-arm64/WONDERvoice.app/Contents/Resources/server/server.js" \
+  || { echo "ERROR: server bundle missing from packaged app"; exit 1; }
+
 echo "==> Done. Artifacts in electron/dist/"

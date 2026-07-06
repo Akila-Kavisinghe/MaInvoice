@@ -3,10 +3,12 @@ import { sameOrigin } from "@/lib/auth";
 import { localModeUnavailable } from "@/lib/local-mode";
 import {
   deleteInvoice,
+  getInvoiceEntry,
   getInvoiceFile,
   hasInvoiceDir,
   updateInvoice,
 } from "@/lib/library";
+import { resolveRemoteSync } from "@/lib/local-settings";
 import { invoicePatchSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
@@ -39,7 +41,11 @@ export async function GET(
   });
 }
 
-/** Toggle row flags: emailReceived (inbound) and paid. */
+/**
+ * Toggle row flags (emailReceived, paid), set the tax category, or edit the
+ * invoice details. An event name/date edit also re-files the PDF into the
+ * matching "<year>/<date event>" folder.
+ */
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -55,7 +61,10 @@ export async function PATCH(
 
   const parsed = invoicePatchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid input", issues: parsed.error.flatten().fieldErrors },
+      { status: 400 },
+    );
   }
 
   const { id } = await params;
@@ -80,6 +89,23 @@ export async function DELETE(
   }
 
   const { id } = await params;
+  // If a website copy still exists, remove it too (best-effort) — otherwise
+  // the invoice would just re-sync on the next pull after being deleted here.
+  const entry = await getInvoiceEntry(id);
+  if (entry?.pendingId) {
+    const remote = resolveRemoteSync();
+    if (remote) {
+      await fetch(`${remote.url}/api/sync/ack`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${remote.token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ ids: [entry.pendingId] }),
+      }).catch(() => null);
+    }
+  }
+
   const removed = await deleteInvoice(id);
   if (!removed) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

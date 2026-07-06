@@ -66,12 +66,18 @@ export async function POST(req: Request) {
     contactName: parsed.data.bandmateName,
   };
   const entry = await addInvoice(pdf, file.name || "invoice.pdf", "upload", "inbound", meta);
-  if (meta.contactEmail) {
+
+  // Create/refresh a contact card for the sender — only when the user opted
+  // in on the form (checkbox defaults to on when an email is present).
+  let contactSaved = false;
+  const wantContact = form.get("saveContact") !== "false";
+  if (wantContact && meta.contactEmail) {
     try {
       await upsertContact({ email: meta.contactEmail, name: meta.bandmateName });
+      contactSaved = true;
     } catch (err) {
       console.error("contact upsert failed", err);
     }
   }
-  return NextResponse.json({ entry });
+  return NextResponse.json({ entry, contactSaved });
 }

@@ -50,3 +50,18 @@ export const TAX_CATEGORY_IDS = TAX_CATEGORIES.map((c) => c.id);
 export function taxCategoryById(id: string | undefined): TaxCategory | undefined {
   return TAX_CATEGORIES.find((c) => c.id === id);
 }
+
+/**
+ * The category an entry actually reports under: a custom category tag's
+ * mapping wins when the tag still exists; otherwise the entry's own
+ * taxCategory. `tagMap` is tag name → T2125 category id.
+ */
+export function effectiveTaxCategoryId(
+  entry: { taxCategory?: string; categoryTag?: string },
+  tagMap: Record<string, string>,
+): string | undefined {
+  if (entry.categoryTag && tagMap[entry.categoryTag]) {
+    return tagMap[entry.categoryTag];
+  }
+  return entry.taxCategory;
+}

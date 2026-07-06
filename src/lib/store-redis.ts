@@ -29,7 +29,7 @@ import { combineSubmissions, submissionKey } from "./submissions";
  *   users:allowlist        -> hash of email -> AllowedUser (JSON).
  *   synctoken:<sha256>     -> owner email (bearer-token lookup).
  *   user:<email>:synctoken -> sha256 of the user's current sync token (for revoke).
- *   pending:<id>           -> PendingInvoice (JSON incl. base64 PDF), 30-day TTL.
+ *   pending:<id>           -> PendingInvoice (JSON incl. base64 PDF), 90-day TTL.
  *   user:<email>:pending   -> sorted set of pending ids, scored by creation time.
  */
 
@@ -43,7 +43,9 @@ const USER_SYNC_TOKEN_KEY = (email: string) => `user:${email}:synctoken`;
 const PENDING_KEY = (id: string) => `pending:${id}`;
 const USER_PENDING_KEY = (email: string) => `user:${email}:pending`;
 
-export const PENDING_TTL_SECONDS = 30 * 24 * 60 * 60;
+// Generous window: copies are only deleted when the user confirms removal
+// after a successful sync, so the TTL is a backstop, not the cleanup path.
+export const PENDING_TTL_SECONDS = 90 * 24 * 60 * 60;
 
 /**
  * Accept both naming conventions:

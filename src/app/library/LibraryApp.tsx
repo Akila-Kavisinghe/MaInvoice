@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Banner, Button, Card } from "@/components/ui";
+import { Banner, Button, Card, Input, Label, Textarea } from "@/components/ui";
 import { formatDate, formatMoney } from "@/lib/format";
-import { TAX_CATEGORIES, taxCategoryById } from "@/lib/t2125";
-import type { Contact, LibraryEntry, RemoteInfo } from "./lib-types";
+import { TAX_CATEGORIES, effectiveTaxCategoryId, taxCategoryById } from "@/lib/t2125";
+import type { CategoryTag, Contact, LibraryEntry, RemoteInfo } from "./lib-types";
+import { tagColorClasses } from "./tag-colors";
 import FolderPicker from "./FolderPicker";
 
 interface Feedback {
@@ -22,6 +23,7 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
   const [remote, setRemote] = useState<RemoteInfo | null>(null); // null = loading
   const [invoices, setInvoices] = useState<LibraryEntry[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [categoryTags, setCategoryTags] = useState<CategoryTag[]>([]);
   const [unindexed, setUnindexed] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -29,6 +31,7 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
   const [direction, setDirection] = useState<DirectionFilter>("all");
   const [contactFilter, setContactFilter] = useState<string | null>(null);
   const [paidFilter, setPaidFilter] = useState<PaidFilter>("all");
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
 
   const load = useCallback(() => {
     fetch("/api/local/invoices")
@@ -41,6 +44,10 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
     fetch("/api/local/contacts")
       .then((r) => (r.ok ? r.json() : { contacts: [] }))
       .then((d) => setContacts(d.contacts ?? []))
+      .catch(() => {});
+    fetch("/api/local/tags")
+      .then((r) => (r.ok ? r.json() : { tags: [] }))
+      .then((d) => setCategoryTags(d.tags ?? []))
       .catch(() => {});
   }, []);
 
@@ -159,6 +166,9 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
         contactFilter={contactFilter}
         onContact={setContactFilter}
         contacts={contacts}
+        tagFilter={tagFilter}
+        onTag={setTagFilter}
+        allEventTags={allEventTags(invoices)}
       />
 
       <InvoiceList
@@ -167,13 +177,25 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
             (direction === "all" || inv.direction === direction) &&
             (paidFilter === "all" ||
               (paidFilter === "paid" ? !!inv.paidAt : !inv.paidAt)) &&
-            (!contactFilter || inv.contactEmail === contactFilter),
+            (!contactFilter || inv.contactEmail === contactFilter) &&
+            (!tagFilter || (inv.eventTags ?? []).includes(tagFilter)),
         )}
-        filtered={direction !== "all" || paidFilter !== "all" || !!contactFilter}
+        filtered={
+          direction !== "all" || paidFilter !== "all" || !!contactFilter || !!tagFilter
+        }
         knownContactEmails={new Set(contacts.map((c) => c.email))}
+        categoryTags={categoryTags}
+        allEventTags={allEventTags(invoices)}
         onChanged={load}
       />
     </>
+  );
+}
+
+/** Every event tag in use, alphabetical. */
+function allEventTags(invoices: LibraryEntry[]): string[] {
+  return [...new Set(invoices.flatMap((i) => i.eventTags ?? []))].sort((a, b) =>
+    a.localeCompare(b),
   );
 }
 
@@ -185,6 +207,9 @@ function FilterBar({
   contactFilter,
   onContact,
   contacts,
+  tagFilter,
+  onTag,
+  allEventTags,
 }: {
   direction: DirectionFilter;
   onDirection: (d: DirectionFilter) => void;
@@ -193,6 +218,9 @@ function FilterBar({
   contactFilter: string | null;
   onContact: (email: string | null) => void;
   contacts: Contact[];
+  tagFilter: string | null;
+  onTag: (tag: string | null) => void;
+  allEventTags: string[];
 }) {
   const tab = (value: DirectionFilter, label: string) => (
     <button
@@ -235,6 +263,20 @@ function FilterBar({
           </option>
         ))}
       </select>
+      {allEventTags.length > 0 ? (
+        <select
+          value={tagFilter ?? ""}
+          onChange={(e) => onTag(e.target.value || null)}
+          className={selectClasses}
+        >
+          <option value="">All tags</option>
+          {allEventTags.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+      ) : null}
     </div>
   );
 }
@@ -243,11 +285,15 @@ function InvoiceList({
   invoices,
   filtered,
   knownContactEmails,
+  categoryTags,
+  allEventTags,
   onChanged,
 }: {
   invoices: LibraryEntry[];
   filtered: boolean;
   knownContactEmails: Set<string>;
+  categoryTags: CategoryTag[];
+  allEventTags: string[];
   onChanged: () => void;
 }) {
   if (invoices.length === 0) {
@@ -290,6 +336,8 @@ function InvoiceList({
                 key={inv.id}
                 invoice={inv}
                 knownContact={!inv.contactEmail || knownContactEmails.has(inv.contactEmail)}
+                categoryTags={categoryTags}
+                allEventTags={allEventTags}
                 onChanged={onChanged}
               />
             ))}
@@ -303,14 +351,22 @@ function InvoiceList({
 function InvoiceRow({
   invoice,
   knownContact,
+  categoryTags,
+  allEventTags,
   onChanged,
 }: {
   invoice: LibraryEntry;
   /** False when the sender has an email but no contact card yet. */
   knownContact: boolean;
+  categoryTags: CategoryTag[];
+  allEventTags: string[];
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  // Receipt staged for upload — confirmed with a paid date before it's sent.
+  const [pendingReceipt, setPendingReceipt] = useState<File | null>(null);
+  const [receiptDate, setReceiptDate] = useState("");
   const receiptRef = useRef<HTMLInputElement>(null);
   const filename = invoice.relPath.split("/").pop() ?? invoice.relPath;
   const inbound = invoice.direction !== "outbound";
@@ -332,6 +388,8 @@ function InvoiceRow({
     emailReceived?: boolean;
     paid?: boolean;
     taxCategory?: string | null;
+    categoryTag?: string | null;
+    eventTags?: string[];
   }) {
     setBusy(true);
     try {
@@ -346,17 +404,31 @@ function InvoiceRow({
     }
   }
 
-  async function uploadReceipt(file: File) {
+  function stageReceipt(file: File) {
+    setPendingReceipt(file);
+    // Default to the existing paid date (re-attaching) or today.
+    setReceiptDate(
+      invoice.paidAt
+        ? invoice.paidAt.slice(0, 10)
+        : new Date().toLocaleDateString("en-CA"),
+    );
+  }
+
+  async function uploadReceipt() {
+    if (!pendingReceipt) return;
     setBusy(true);
     try {
       const body = new FormData();
-      body.set("file", file);
+      body.set("file", pendingReceipt);
+      if (receiptDate) body.set("paidDate", receiptDate);
       const res = await fetch(`/api/local/invoices/${invoice.id}/receipt`, {
         method: "POST",
         body,
       });
-      if (res.ok) onChanged();
-      else {
+      if (res.ok) {
+        setPendingReceipt(null);
+        onChanged();
+      } else {
         const data = await res.json().catch(() => ({}));
         window.alert(data.error ?? "Receipt upload failed");
       }
@@ -368,6 +440,11 @@ function InvoiceRow({
 
   const flagButton =
     "rounded-lg px-2 py-1 text-xs font-medium disabled:opacity-50";
+
+  const effectiveCategory = effectiveTaxCategoryId(
+    invoice,
+    Object.fromEntries(categoryTags.map((t) => [t.name, t.taxCategory])),
+  );
 
   return (
     <Card className="p-4">
@@ -471,23 +548,47 @@ function InvoiceRow({
             ) : null}
             {inbound ? (
               <select
-                value={invoice.taxCategory ?? ""}
+                value={
+                  invoice.categoryTag &&
+                  categoryTags.some((t) => t.name === invoice.categoryTag)
+                    ? `tag:${invoice.categoryTag}`
+                    : (invoice.taxCategory ?? "")
+                }
                 disabled={busy}
-                onChange={(e) => patch({ taxCategory: e.target.value || null })}
-                title="T2125 tax category"
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v.startsWith("tag:")) {
+                    patch({ categoryTag: v.slice(4) });
+                  } else {
+                    // Picking a raw category (or clearing) also drops the tag.
+                    patch({ taxCategory: v || null, categoryTag: null });
+                  }
+                }}
+                title="T2125 tax category — your tags map onto real categories"
                 className={`rounded-lg border border-hair bg-elev px-1.5 py-1 text-xs outline-none focus:border-accent ${
-                  invoice.taxCategory ? "text-ink" : "text-danger"
+                  effectiveCategory ? "text-ink" : "text-danger"
                 }`}
               >
                 <option value="">Tax: uncategorized</option>
-                {TAX_CATEGORIES.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
+                {categoryTags.length > 0 ? (
+                  <optgroup label="My tags">
+                    {categoryTags.map((t) => (
+                      <option key={t.name} value={`tag:${t.name}`}>
+                        {t.name} → {taxCategoryById(t.taxCategory)?.label ?? t.taxCategory}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
+                <optgroup label="T2125 categories">
+                  {TAX_CATEGORIES.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.label}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
             ) : null}
-            {inbound && taxCategoryById(invoice.taxCategory)?.capital ? (
+            {inbound && taxCategoryById(effectiveCategory)?.capital ? (
               <span
                 className="rounded-lg bg-danger/10 px-2 py-1 text-xs font-medium text-danger"
                 title="Equipment with lasting value is usually depreciated (CCA), not fully expensed in the purchase year."
@@ -522,13 +623,56 @@ function InvoiceRow({
               </button>
             ) : null}
           </div>
+
+          {/* Grouping tags: chips + adder */}
+          <EventTagEditor
+            tags={invoice.eventTags ?? []}
+            suggestions={allEventTags}
+            busy={busy}
+            onChange={(eventTags) => patch({ eventTags })}
+          />
+          {pendingReceipt ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[10px] border border-hair bg-elev px-3 py-2">
+              <span className="max-w-48 truncate text-xs font-medium text-ink">
+                {pendingReceipt.name}
+              </span>
+              <label className="flex items-center gap-1.5 text-xs text-dim">
+                Paid on
+                <input
+                  type="date"
+                  value={receiptDate}
+                  onChange={(e) => setReceiptDate(e.target.value)}
+                  className="rounded-lg border border-hair bg-panel px-2 py-1 text-xs text-ink outline-none focus:border-accent"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={uploadReceipt}
+                disabled={busy || !receiptDate}
+                className={`${flagButton} bg-accent/10 text-accent hover:brightness-110`}
+              >
+                {busy ? "Attaching…" : "Attach"}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setPendingReceipt(null);
+                  if (receiptRef.current) receiptRef.current.value = "";
+                }}
+                className={`${flagButton} text-dim hover:bg-panel hover:text-ink`}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : null}
           <input
             ref={receiptRef}
             type="file"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) uploadReceipt(f);
+              if (f) stageReceipt(f);
             }}
           />
         </div>
@@ -543,6 +687,16 @@ function InvoiceRow({
           </a>
           <button
             type="button"
+            onClick={() => setEditing((e) => !e)}
+            disabled={busy}
+            className={`rounded-lg px-2.5 py-1.5 text-sm font-medium disabled:opacity-50 ${
+              editing ? "bg-elev text-ink" : "text-dim hover:bg-elev hover:text-ink"
+            }`}
+          >
+            Edit
+          </button>
+          <button
+            type="button"
             onClick={remove}
             disabled={busy}
             className="rounded-lg px-2.5 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
@@ -551,7 +705,256 @@ function InvoiceRow({
           </button>
         </div>
       </div>
+      {editing ? (
+        <EditDetailsForm
+          invoice={invoice}
+          onClose={() => setEditing(false)}
+          onSaved={onChanged}
+        />
+      ) : null}
     </Card>
+  );
+}
+
+/**
+ * Chips for an invoice's grouping tags, with a small inline adder that
+ * suggests tags already in use elsewhere.
+ */
+function EventTagEditor({
+  tags,
+  suggestions,
+  busy,
+  onChange,
+}: {
+  tags: string[];
+  suggestions: string[];
+  busy: boolean;
+  onChange: (tags: string[]) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const datalistId = useRef(`tags-${Math.random().toString(36).slice(2)}`);
+
+  function commit() {
+    const t = draft.trim();
+    setDraft("");
+    setAdding(false);
+    if (t && !tags.includes(t)) onChange([...tags, t]);
+  }
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      {tags.map((t) => (
+        <span
+          key={t}
+          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${tagColorClasses(t)}`}
+        >
+          {t}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onChange(tags.filter((x) => x !== t))}
+            className="opacity-60 hover:opacity-100 disabled:opacity-40"
+            title={`Remove tag ${t}`}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      {adding ? (
+        <input
+          autoFocus
+          value={draft}
+          list={datalistId.current}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commit();
+            }
+            if (e.key === "Escape") {
+              setDraft("");
+              setAdding(false);
+            }
+          }}
+          placeholder="tag name"
+          className="w-32 rounded-full border border-hair bg-elev px-2 py-0.5 text-xs text-ink outline-none focus:border-accent"
+        />
+      ) : (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => setAdding(true)}
+          className="rounded-full px-2 py-0.5 text-xs font-medium text-muted hover:bg-elev hover:text-ink disabled:opacity-50"
+          title="Group this expense with a tag (e.g. a tour or project)"
+        >
+          + tag
+        </button>
+      )}
+      <datalist id={datalistId.current}>
+        {suggestions
+          .filter((s) => !tags.includes(s))
+          .map((s) => (
+            <option key={s} value={s} />
+          ))}
+      </datalist>
+    </div>
+  );
+}
+
+/**
+ * Inline editor for an invoice's details. Saving an event name/date change
+ * also re-files the PDF into the matching "<year>/<date event>" folder.
+ */
+function EditDetailsForm({
+  invoice,
+  onClose,
+  onSaved,
+}: {
+  invoice: LibraryEntry;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [f, setF] = useState({
+    eventName: invoice.eventName ?? "",
+    eventDate: invoice.eventDate ?? "",
+    contactName: invoice.contactName ?? invoice.bandmateName ?? "",
+    contactEmail: invoice.contactEmail ?? "",
+    invoiceNumber: invoice.invoiceNumber ?? "",
+    amount: typeof invoice.amount === "number" ? String(invoice.amount) : "",
+    notes: invoice.notes ?? "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function set<K extends keyof typeof f>(key: K, value: string) {
+    setF((p) => ({ ...p, [key]: value }));
+  }
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const amountStr = f.amount.trim();
+    const amount = amountStr === "" ? null : Number(amountStr);
+    if (amount !== null && !Number.isFinite(amount)) {
+      setError("Amount must be a number.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/local/invoices/${invoice.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventName: f.eventName.trim(),
+          eventDate: f.eventDate,
+          contactName: f.contactName.trim(),
+          contactEmail: f.contactEmail.trim(),
+          invoiceNumber: f.invoiceNumber.trim(),
+          amount,
+          notes: f.notes.trim(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const issues = data.issues
+          ? Object.values(data.issues as Record<string, string[]>)
+              .flat()
+              .join(" ")
+          : "";
+        setError([data.error, issues].filter(Boolean).join(" — ") || "Save failed");
+        return;
+      }
+      onSaved();
+      onClose();
+    } catch {
+      setError("Network error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={onSubmit}
+      className="mt-3 space-y-3 border-t border-hair pt-3"
+      noValidate
+    >
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label>Event name</Label>
+          <Input
+            value={f.eventName}
+            onChange={(e) => set("eventName", e.target.value)}
+          />
+        </div>
+        <div>
+          <Label>Event date</Label>
+          <Input
+            type="date"
+            value={f.eventDate}
+            onChange={(e) => set("eventDate", e.target.value)}
+          />
+        </div>
+        <div>
+          <Label>{invoice.direction === "outbound" ? "Billed to" : "Who it's from"}</Label>
+          <Input
+            value={f.contactName}
+            onChange={(e) => set("contactName", e.target.value)}
+          />
+        </div>
+        <div>
+          <Label hint="(optional)">Their email</Label>
+          <Input
+            type="email"
+            value={f.contactEmail}
+            onChange={(e) => set("contactEmail", e.target.value)}
+          />
+        </div>
+        <div>
+          <Label>Invoice #</Label>
+          <Input
+            value={f.invoiceNumber}
+            onChange={(e) => set("invoiceNumber", e.target.value)}
+          />
+        </div>
+        <div>
+          <Label>Amount</Label>
+          <Input
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            min="0"
+            value={f.amount}
+            onChange={(e) => set("amount", e.target.value)}
+            placeholder="0.00"
+          />
+        </div>
+      </div>
+      <div>
+        <Label>Notes</Label>
+        <Textarea
+          rows={2}
+          value={f.notes}
+          onChange={(e) => set("notes", e.target.value)}
+        />
+      </div>
+      {error ? <Banner tone="error">{error}</Banner> : null}
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={saving}
+          className="rounded-lg px-3 py-1.5 text-sm font-medium text-dim hover:bg-elev hover:text-ink disabled:opacity-50"
+        >
+          Cancel
+        </button>
+        <Button type="submit" disabled={saving} className="px-4 py-1.5 text-sm">
+          {saving ? "Saving…" : "Save changes"}
+        </Button>
+      </div>
+    </form>
   );
 }
 

@@ -29,7 +29,7 @@ const DATA_FILE = path.join(DATA_DIR, "gigs.json");
 const META_FILE = path.join(DATA_DIR, "meta.json");
 const PENDING_FILE = path.join(DATA_DIR, "pending.json");
 
-const PENDING_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const PENDING_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 
 type Db = Record<string, Gig>;
 
@@ -235,7 +235,7 @@ export async function addPendingInvoice(p: PendingInvoice): Promise<void> {
     const db = await readPending();
     db[p.id] = p;
     for (const [id, entry] of Object.entries(db)) {
-      if (isExpired(entry)) delete db[id]; // enforce the 30-day TTL on write
+      if (isExpired(entry)) delete db[id]; // enforce the 90-day TTL on write
     }
     await writeJson(PENDING_FILE, db);
   });

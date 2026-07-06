@@ -149,7 +149,7 @@ The library is a full bookkeeping view:
   rows have a "Mark emailed" toggle to track whether the sender emailed the
   invoice in.
 
-The server keeps a generated PDF (flagged pending, 30-day expiry) only until
+The server keeps a generated PDF (flagged pending, 90-day expiry) only until
 your local app confirms it has been written to your folder — then it's deleted
 from the server. The local pages and `/api/local/*` routes only exist when
 `LOCAL_MODE=1` and never on Vercel; the local server binds to `127.0.0.1`.

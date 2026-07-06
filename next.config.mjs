@@ -18,6 +18,9 @@ const securityHeaders = [
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
       "connect-src 'self'",
+      // blob: lets the upload form preview the just-selected PDF in an
+      // iframe before it's ever sent anywhere.
+      "frame-src 'self' blob:",
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -48,7 +51,12 @@ const nextConfig = {
     : {}),
   // @react-pdf/renderer must run in Node and should not be bundled by the
   // server compiler — it ships its own native-ish font/stream handling.
-  serverExternalPackages: ["@react-pdf/renderer"],
+  // pdfjs-dist must stay unbundled: webpack breaks its Node-environment
+  // detection (missing-DOM errors). Text extraction needs no canvas.
+  serverExternalPackages: ["@react-pdf/renderer", "pdfjs-dist"],
+  outputFileTracingIncludes: {
+    "/api/local/parse-invoice": ["./node_modules/pdfjs-dist/**/*"],
+  },
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },

@@ -133,7 +133,11 @@ export const outboundSchema = z.object({
 
 export type OutboundInput = z.infer<typeof outboundSchema>;
 
-/** Local library → toggle flags / set the T2125 category on an invoice row. */
+/**
+ * Local library → toggle flags, set the T2125 category, or edit the details
+ * on an invoice row. Detail fields distinguish absent (untouched) from empty
+ * string (cleared), so they deliberately don't reuse optionalText.
+ */
 export const invoicePatchSchema = z
   .object({
     emailReceived: z.boolean().optional(),
@@ -143,11 +147,38 @@ export const invoicePatchSchema = z
       .refine((v) => TAX_CATEGORY_IDS.includes(v), "Unknown category")
       .nullable()
       .optional(),
+    /** Custom category tag name; existence isn't checked — a dangling tag
+     * simply falls back to taxCategory on the summary. */
+    categoryTag: trimmed.max(60).nullable().optional(),
+    /** Blank entries are tolerated here and dropped by the library layer. */
+    eventTags: z.array(trimmed.max(40)).max(20).optional(),
+    eventName: trimmed.max(200).optional(),
+    eventDate: isoDate.or(z.literal("")).optional(),
+    contactName: trimmed.max(200).optional(),
+    contactEmail: trimmed
+      .email("Enter a valid email")
+      .toLowerCase()
+      .or(z.literal(""))
+      .optional(),
+    invoiceNumber: trimmed.max(60).optional(),
+    amount: z
+      .number({ invalid_type_error: "Enter a number" })
+      .positive("Enter an amount greater than 0")
+      .max(1_000_000)
+      .nullable()
+      .optional(),
+    notes: trimmed.max(2000).optional(),
   })
-  .refine(
-    (d) =>
-      d.emailReceived !== undefined ||
-      d.paid !== undefined ||
-      d.taxCategory !== undefined,
-    { message: "Nothing to update" },
-  );
+  .refine((d) => Object.values(d).some((v) => v !== undefined), {
+    message: "Nothing to update",
+  });
+
+export type InvoicePatch = z.infer<typeof invoicePatchSchema>;
+
+/** Local library → create or remap a custom category tag. */
+export const categoryTagSchema = z.object({
+  name: trimmed.min(1, "Required").max(60),
+  taxCategory: z
+    .string()
+    .refine((v) => TAX_CATEGORY_IDS.includes(v), "Unknown category"),
+});

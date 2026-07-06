@@ -47,11 +47,23 @@ export async function POST(
     return NextResponse.json({ error: "File too large (max 20MB)" }, { status: 400 });
   }
 
+  // Optional payment date (yyyy-mm-dd) — for receipts filed later than the
+  // money actually moved.
+  const paidDateRaw = form.get("paidDate");
+  const paidDate =
+    typeof paidDateRaw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(paidDateRaw)
+      ? paidDateRaw
+      : undefined;
+  if (typeof paidDateRaw === "string" && paidDateRaw !== "" && !paidDate) {
+    return NextResponse.json({ error: "Use a valid paid date" }, { status: 400 });
+  }
+
   const { id } = await params;
   const entry = await attachReceipt(
     id,
     Buffer.from(await file.arrayBuffer()),
     file.name || "receipt",
+    paidDate,
   );
   if (!entry) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
