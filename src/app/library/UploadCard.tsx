@@ -8,6 +8,7 @@ const NEW_SENDER = "__new__";
 
 const EMPTY_UPLOAD = {
   eventName: "",
+  description: "",
   eventDate: "",
   bandmateName: "",
   contactEmail: "",
@@ -210,16 +211,9 @@ export default function UploadCard({
   }
 
   return (
-    // With a PDF selected, the card outgrows the narrow page column so the
-    // form and a live preview sit side by side (the preview is what you read
-    // the details off while filling the fields).
-    <Card
-      className={`mt-6 p-5 ${
-        previewUrl
-          ? "lg:relative lg:left-1/2 lg:w-[min(68rem,calc(100vw-2.5rem))] lg:-translate-x-1/2"
-          : ""
-      }`}
-    >
+    // With a PDF selected the form and a live preview sit side by side (the
+    // preview is what you read the details off while filling the fields).
+    <Card className="mt-6 p-5">
       <h2 className="text-lg font-semibold text-ink">
         {outbound ? "Upload an invoice you issued" : "Upload an invoice PDF"}
       </h2>
@@ -329,6 +323,14 @@ export default function UploadCard({
               onChange={(e) => update("eventDate", e.target.value)}
             />
           </div>
+        </div>
+        <div>
+          <Label hint="(optional)">Description</Label>
+          <Input
+            value={form.description}
+            onChange={(e) => update("description", e.target.value)}
+            placeholder="Secondary line under the event"
+          />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>

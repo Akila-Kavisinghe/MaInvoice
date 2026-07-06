@@ -56,6 +56,9 @@ export async function POST(req: Request) {
 
   const entry = await addInvoice(pdf, filename, "generated", "outbound", {
     eventName: input.eventName ?? undefined,
+    // The line item doubles as the entry's secondary descriptor (the line
+    // under the event in the table), capped to the field's length.
+    description: input.description.slice(0, 200),
     eventDate: input.eventDate ?? today,
     invoiceNumber,
     amount: input.amount,

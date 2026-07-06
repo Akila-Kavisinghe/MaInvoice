@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Banner, Button, Card, Input, Label, Textarea } from "@/components/ui";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatMoney } from "@/lib/format";
 import { TAX_CATEGORIES, effectiveTaxCategoryId, taxCategoryById } from "@/lib/t2125";
 import type { CategoryTag, Contact, LibraryEntry, RemoteInfo } from "./lib-types";
 import { tagColorClasses } from "./tag-colors";
@@ -333,14 +333,31 @@ function InvoiceList({
   }
   const years = [...byYear.keys()].sort((a, b) => b.localeCompare(a));
 
+  const headCell = "py-2 font-semibold";
   return (
-    <section className="mt-6 space-y-6">
-      {years.map((year) => (
-        <div key={year}>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">
-            {year}
-          </h2>
-          <div className="space-y-3">
+    <div className="mt-6 overflow-x-auto">
+      <table className="w-full min-w-[560px] table-fixed border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-hair text-left text-[11px] uppercase tracking-wide text-slate-400">
+            <th className={`w-11 ${headCell}`}></th>
+            <th className={headCell}>Event</th>
+            <th className={`w-36 ${headCell}`}>Contact</th>
+            <th className={`w-24 text-right pr-4 ${headCell}`}>Amount</th>
+            <th className={`w-16 ${headCell}`}>Date</th>
+            <th className={`w-24 ${headCell}`}>Status</th>
+            <th className="w-32"></th>
+          </tr>
+        </thead>
+        {years.map((year) => (
+          <tbody key={year}>
+            <tr>
+              <td
+                colSpan={7}
+                className="pt-5 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-400"
+              >
+                {year}
+              </td>
+            </tr>
             {byYear.get(year)!.map((inv) => (
               <InvoiceRow
                 key={inv.id}
@@ -352,10 +369,10 @@ function InvoiceList({
                 onChanged={onChanged}
               />
             ))}
-          </div>
-        </div>
-      ))}
-    </section>
+          </tbody>
+        ))}
+      </table>
+    </div>
   );
 }
 
@@ -376,6 +393,7 @@ function InvoiceRow({
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   // Receipt staged for upload — confirmed with a paid date before it's sent.
   const [pendingReceipt, setPendingReceipt] = useState<File | null>(null);
@@ -403,6 +421,11 @@ function InvoiceRow({
     taxCategory?: string | null;
     categoryTag?: string | null;
     eventTags?: string[];
+    eventName?: string;
+    description?: string;
+    eventDate?: string;
+    contactName?: string;
+    amount?: number | null;
   }) {
     setBusy(true);
     try {
@@ -453,40 +476,198 @@ function InvoiceRow({
 
   const flagButton =
     "rounded-lg px-2 py-1 text-xs font-medium disabled:opacity-50";
+  const iconBtn =
+    "rounded-md p-1.5 text-slate-400 transition hover:bg-elev hover:text-ink disabled:opacity-40";
 
   const effectiveCategory = effectiveTaxCategoryId(
     invoice,
     Object.fromEntries(categoryTags.map((t) => [t.name, t.taxCategory])),
   );
 
-  return (
-    <Card className="p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate font-semibold text-slate-800">
-            <span
-              className={`mr-2 inline-block rounded px-1.5 py-0.5 align-middle text-[10px] font-bold uppercase tracking-wide ${
-                inbound ? "bg-accent/10 text-accent" : "bg-success/10 text-success"
-              }`}
-            >
-              {inbound ? "In" : "Out"}
-            </span>
-            {invoice.eventName || filename}
-          </p>
-          <p className="mt-0.5 text-xs text-slate-500">
-            {[
-              invoice.contactName ?? invoice.bandmateName,
-              invoice.invoiceNumber,
-              typeof invoice.amount === "number" ? formatMoney(invoice.amount) : null,
-              invoice.eventDate ? formatDate(invoice.eventDate) : null,
-            ]
-              .filter(Boolean)
-              .join(" · ") || "No details"}
-          </p>
-          <p className="mt-0.5 truncate text-xs text-slate-400">{invoice.relPath}</p>
+  const shortDate = invoice.eventDate
+    ? new Date(`${invoice.eventDate}T12:00:00`).toLocaleDateString("en-CA", {
+        month: "short",
+        day: "numeric",
+      })
+    : "—";
 
-          {/* Status + fulfillment controls */}
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+  return (
+    <>
+      {/* Summary row — double-click a cell to edit it; icons on the right. */}
+      <tr
+        onClick={() => setExpanded((e) => !e)}
+        className={`group cursor-pointer border-b border-hair/60 align-top transition-colors hover:bg-elev/60 ${
+          expanded ? "bg-elev/40" : ""
+        }`}
+      >
+        <td className="py-2">
+          <span
+            className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+              inbound ? "bg-accent/10 text-accent" : "bg-success/10 text-success"
+            }`}
+          >
+            {inbound ? "In" : "Out"}
+          </span>
+        </td>
+        <td className="py-2 pr-2">
+          <EditableCell
+            value={invoice.eventName ?? ""}
+            display={
+              <span className="block truncate font-medium text-slate-800">
+                {invoice.eventName || filename}
+              </span>
+            }
+            suggestions={allEventNames}
+            onSave={(v) => patch({ eventName: v })}
+          />
+          <EditableCell
+            value={invoice.description ?? ""}
+            display={
+              invoice.description ? (
+                <span className="block truncate text-xs text-slate-500">
+                  {invoice.description}
+                </span>
+              ) : (
+                <span className="block text-xs italic text-slate-400 opacity-0 transition group-hover:opacity-70">
+                  add description…
+                </span>
+              )
+            }
+            onSave={(v) => patch({ description: v })}
+            inputClassName="text-xs"
+          />
+          {(invoice.eventTags?.length ?? 0) > 0 ? (
+            <div className="mt-0.5 flex flex-wrap gap-1">
+              {invoice.eventTags!.map((t) => (
+                <span
+                  key={t}
+                  className={`rounded-full px-1.5 text-[10px] font-medium ${tagColorClasses(t)}`}
+                >
+                  {t}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </td>
+        <td className="py-2 pr-2 text-slate-500">
+          <EditableCell
+            value={invoice.contactName ?? invoice.bandmateName ?? ""}
+            display={
+              <span className="block truncate">
+                {invoice.contactName ?? invoice.bandmateName ?? (
+                  <span className="text-slate-400">—</span>
+                )}
+              </span>
+            }
+            onSave={(v) => patch({ contactName: v })}
+          />
+        </td>
+        <td className="py-2 pr-4 text-right tabular-nums text-slate-700">
+          <EditableCell
+            type="number"
+            value={typeof invoice.amount === "number" ? String(invoice.amount) : ""}
+            display={
+              typeof invoice.amount === "number" ? (
+                formatMoney(invoice.amount)
+              ) : (
+                <span className="text-slate-400">—</span>
+              )
+            }
+            inputClassName="text-right"
+            onSave={(v) => {
+              const s = v.trim();
+              const n = s === "" ? null : Number(s);
+              if (n !== null && !Number.isFinite(n)) return;
+              patch({ amount: n });
+            }}
+          />
+        </td>
+        <td className="py-2 text-slate-500">
+          <EditableCell
+            type="date"
+            value={invoice.eventDate ?? ""}
+            display={shortDate}
+            onSave={(v) => patch({ eventDate: v })}
+          />
+        </td>
+        <td className="py-2">
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium">
+            <span
+              className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                invoice.paidAt ? "bg-success" : "bg-slate-300"
+              }`}
+            />
+            <span className={invoice.paidAt ? "text-success" : "text-slate-500"}>
+              {invoice.paidAt ? "Paid" : "Unpaid"}
+            </span>
+            {inbound && invoice.emailReceived ? (
+              <span className="text-success" title="Sender emailed this invoice">
+                ✉
+              </span>
+            ) : null}
+          </span>
+        </td>
+        <td className="py-2">
+          <div className="flex items-center justify-end gap-0.5">
+            <a
+              href={`/api/local/invoices/${invoice.id}`}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className={iconBtn}
+              title="View PDF"
+            >
+              <EyeIcon />
+            </a>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded(true);
+                setEditing(true);
+              }}
+              className={iconBtn}
+              title="Edit details"
+            >
+              <PenIcon />
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={(e) => {
+                e.stopPropagation();
+                remove();
+              }}
+              className={`${iconBtn} hover:bg-red-500/10 hover:text-red-500`}
+              title="Delete"
+            >
+              <TrashIcon />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded((x) => !x);
+              }}
+              className={`${iconBtn} ${expanded ? "rotate-180" : ""}`}
+              title={expanded ? "Collapse" : "More"}
+            >
+              <ChevronIcon />
+            </button>
+          </div>
+        </td>
+      </tr>
+
+      {expanded ? (
+        <tr className="border-b border-hair/60 bg-elev/30">
+          <td colSpan={7} className="px-1 pb-4 pt-1">
+            <p className="mb-2 truncate text-xs text-slate-400" title={invoice.relPath}>
+              {invoice.relPath}
+            </p>
+
+            {/* Status + fulfillment controls */}
+            <div className="flex flex-wrap items-center gap-1.5">
             {invoice.paidAt ? (
               <>
                 <span className="rounded-lg bg-success/10 px-2 py-1 text-xs font-medium text-success">
@@ -688,45 +869,19 @@ function InvoiceRow({
               if (f) stageReceipt(f);
             }}
           />
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <a
-            href={`/api/local/invoices/${invoice.id}`}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-lg px-2.5 py-1.5 text-sm font-medium text-accent hover:bg-elev"
-          >
-            View
-          </a>
-          <button
-            type="button"
-            onClick={() => setEditing((e) => !e)}
-            disabled={busy}
-            className={`rounded-lg px-2.5 py-1.5 text-sm font-medium disabled:opacity-50 ${
-              editing ? "bg-elev text-ink" : "text-dim hover:bg-elev hover:text-ink"
-            }`}
-          >
-            Edit
-          </button>
-          <button
-            type="button"
-            onClick={remove}
-            disabled={busy}
-            className="rounded-lg px-2.5 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-          >
-            {busy ? "…" : "Delete"}
-          </button>
-        </div>
-      </div>
-      {editing ? (
-        <EditDetailsForm
-          invoice={invoice}
-          eventNames={allEventNames}
-          onClose={() => setEditing(false)}
-          onSaved={onChanged}
-        />
+
+            {editing ? (
+              <EditDetailsForm
+                invoice={invoice}
+                eventNames={allEventNames}
+                onClose={() => setEditing(false)}
+                onSaved={onChanged}
+              />
+            ) : null}
+          </td>
+        </tr>
       ) : null}
-    </Card>
+    </>
   );
 }
 
@@ -834,6 +989,7 @@ function EditDetailsForm({
 }) {
   const [f, setF] = useState({
     eventName: invoice.eventName ?? "",
+    description: invoice.description ?? "",
     eventDate: invoice.eventDate ?? "",
     contactName: invoice.contactName ?? invoice.bandmateName ?? "",
     contactEmail: invoice.contactEmail ?? "",
@@ -864,6 +1020,7 @@ function EditDetailsForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           eventName: f.eventName.trim(),
+          description: f.description.trim(),
           eventDate: f.eventDate,
           contactName: f.contactName.trim(),
           contactEmail: f.contactEmail.trim(),
@@ -910,6 +1067,13 @@ function EditDetailsForm({
               <option key={n} value={n} />
             ))}
           </datalist>
+        </div>
+        <div>
+          <Label hint="(optional)">Description</Label>
+          <Input
+            value={f.description}
+            onChange={(e) => set("description", e.target.value)}
+          />
         </div>
         <div>
           <Label>Event date</Label>
@@ -977,6 +1141,129 @@ function EditDetailsForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+/**
+ * A table cell whose text is editable in place: shows `display` normally,
+ * swaps to an input on double-click, and commits the change on blur/Enter
+ * (Escape cancels). Single clicks are swallowed so they don't toggle the
+ * row's expand.
+ */
+function EditableCell({
+  value,
+  display,
+  type = "text",
+  suggestions,
+  onSave,
+  inputClassName,
+}: {
+  value: string;
+  display?: React.ReactNode;
+  type?: string;
+  suggestions?: string[];
+  onSave: (v: string) => void;
+  inputClassName?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const listId = useRef(`ec-${Math.random().toString(36).slice(2)}`);
+
+  function commit() {
+    setEditing(false);
+    if (draft !== value) onSave(draft);
+  }
+
+  if (!editing) {
+    return (
+      <div
+        onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => {
+          e.stopPropagation();
+          setDraft(value);
+          setEditing(true);
+        }}
+        title="Double-click to edit"
+        className="cursor-text"
+      >
+        {display ?? (value || <span className="text-slate-400">—</span>)}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <input
+        autoFocus
+        type={type}
+        value={draft}
+        list={suggestions ? listId.current : undefined}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+          }
+          if (e.key === "Escape") {
+            setDraft(value);
+            setEditing(false);
+          }
+        }}
+        className={`w-full rounded border border-accent bg-panel px-1.5 py-0.5 text-sm text-ink outline-none ${inputClassName ?? ""}`}
+      />
+      {suggestions ? (
+        <datalist id={listId.current}>
+          {suggestions.map((s) => (
+            <option key={s} value={s} />
+          ))}
+        </datalist>
+      ) : null}
+    </>
+  );
+}
+
+const iconProps = {
+  width: 16,
+  height: 16,
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 2,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+};
+function EyeIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+function PenIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  );
+}
+function TrashIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M3 6h18" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+    </svg>
+  );
+}
+function ChevronIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M6 9l6 6 6-6" />
+    </svg>
   );
 }
 

@@ -31,6 +31,8 @@ export interface LibraryEntry {
   source: "sync" | "upload" | "generated";
   direction: Direction;
   eventName?: string;
+  /** Secondary descriptor shown under the event name. */
+  description?: string;
   eventDate?: string; // yyyy-mm-dd
   bandmateName?: string;
   invoiceNumber?: string;
@@ -72,6 +74,8 @@ export interface LibraryEntry {
 
 export interface LibraryMeta {
   eventName?: string;
+  /** Secondary line under the event (e.g. "Soundcheck + 2 sets"). */
+  description?: string;
   eventDate?: string;
   bandmateName?: string;
   invoiceNumber?: string;
@@ -406,6 +410,7 @@ export async function updateInvoice(
     eventTags?: string[];
     // Detail edits: undefined = untouched, "" (or null amount) = cleared.
     eventName?: string;
+    description?: string;
     eventDate?: string;
     contactName?: string;
     contactEmail?: string;
@@ -437,6 +442,7 @@ export async function updateInvoice(
     }
 
     if (patch.eventName !== undefined) entry.eventName = patch.eventName || undefined;
+    if (patch.description !== undefined) entry.description = patch.description || undefined;
     if (patch.eventDate !== undefined) entry.eventDate = patch.eventDate || undefined;
     if (patch.contactName !== undefined) {
       entry.contactName = patch.contactName || undefined;

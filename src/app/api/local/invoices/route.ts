@@ -42,6 +42,7 @@ export async function POST(req: Request) {
 
   const parsed = libraryMetaSchema.safeParse({
     eventName: form.get("eventName") ?? "",
+    description: form.get("description") ?? "",
     eventDate: form.get("eventDate") ?? "",
     bandmateName: form.get("bandmateName") ?? "",
     contactEmail: form.get("contactEmail") ?? "",

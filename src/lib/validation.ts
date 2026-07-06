@@ -72,6 +72,7 @@ export const syncAckSchema = z.object({
 /** Local library → metadata for a manually uploaded or adopted invoice. */
 export const libraryMetaSchema = z.object({
   eventName: optionalText,
+  description: trimmed.max(200).optional().or(z.literal("").transform(() => undefined)),
   eventDate: isoDate.optional().or(z.literal("").transform(() => undefined)),
   bandmateName: optionalText,
   contactEmail: trimmed
@@ -153,6 +154,7 @@ export const invoicePatchSchema = z
     /** Blank entries are tolerated here and dropped by the library layer. */
     eventTags: z.array(trimmed.max(40)).max(20).optional(),
     eventName: trimmed.max(200).optional(),
+    description: trimmed.max(200).optional(),
     eventDate: isoDate.or(z.literal("")).optional(),
     contactName: trimmed.max(200).optional(),
     contactEmail: trimmed

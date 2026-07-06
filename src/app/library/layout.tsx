@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default function LibraryLayout({ children }: { children: React.ReactNode }) {
   if (!config.localMode || process.env.VERCEL) notFound();
   return (
-    <main className="mx-auto max-w-2xl px-4 py-8">
+    <main className="w-full px-4 py-8 sm:px-6 lg:px-8">
       <Nav />
       <AuthGate>{children}</AuthGate>
     </main>

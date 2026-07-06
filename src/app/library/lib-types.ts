@@ -6,6 +6,7 @@ export interface LibraryEntry {
   source: "sync" | "upload" | "generated";
   direction: "inbound" | "outbound";
   eventName?: string;
+  description?: string;
   eventDate?: string;
   bandmateName?: string;
   invoiceNumber?: string;
