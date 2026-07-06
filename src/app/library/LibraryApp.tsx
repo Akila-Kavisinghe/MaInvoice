@@ -399,6 +399,7 @@ function InvoiceRow({
   // Receipt staged for upload — confirmed with a paid date before it's sent.
   const [pendingReceipt, setPendingReceipt] = useState<File | null>(null);
   const [receiptDate, setReceiptDate] = useState("");
+  const [receiptDateAuto, setReceiptDateAuto] = useState(false);
   const receiptRef = useRef<HTMLInputElement>(null);
   const filename = invoice.relPath.split("/").pop() ?? invoice.relPath;
   const inbound = invoice.direction !== "outbound";
@@ -441,14 +442,31 @@ function InvoiceRow({
     }
   }
 
-  function stageReceipt(file: File) {
+  async function stageReceipt(file: File) {
     setPendingReceipt(file);
+    setReceiptDateAuto(false);
     // Default to the existing paid date (re-attaching) or today.
     setReceiptDate(
       invoice.paidAt
         ? invoice.paidAt.slice(0, 10)
         : new Date().toLocaleDateString("en-CA"),
     );
+    // Read the payment date off a PDF receipt (e.g. TD e-transfer's
+    // "Date Sent") and prefill it. Best-effort; images can't be read.
+    if (/\.pdf$/i.test(file.name) || file.type === "application/pdf") {
+      try {
+        const body = new FormData();
+        body.set("file", file);
+        const res = await fetch("/api/local/parse-receipt", { method: "POST", body });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.paidDate) {
+          setReceiptDate(data.paidDate);
+          setReceiptDateAuto(true);
+        }
+      } catch {
+        /* best-effort — the manual date field still works */
+      }
+    }
   }
 
   async function uploadReceipt() {
@@ -867,10 +885,21 @@ function InvoiceRow({
                 <input
                   type="date"
                   value={receiptDate}
-                  onChange={(e) => setReceiptDate(e.target.value)}
+                  onChange={(e) => {
+                    setReceiptDate(e.target.value);
+                    setReceiptDateAuto(false);
+                  }}
                   className="rounded-lg border border-hair bg-panel px-2 py-1 text-xs text-ink outline-none focus:border-accent"
                 />
               </label>
+              {receiptDateAuto ? (
+                <span
+                  className="text-xs font-medium text-success"
+                  title="Read from the receipt PDF — change it if it's wrong"
+                >
+                  detected ✓
+                </span>
+              ) : null}
               <button
                 type="button"
                 onClick={uploadReceipt}

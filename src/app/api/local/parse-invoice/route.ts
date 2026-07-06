@@ -5,6 +5,7 @@ import { resolveBusiness } from "@/lib/local-settings";
 import { listContacts } from "@/lib/contacts";
 import { hasInvoiceDir } from "@/lib/library";
 import { extractInvoiceFields } from "@/lib/invoice-parse";
+import { extractPdfText } from "@/lib/pdf-text";
 
 export const runtime = "nodejs";
 
@@ -34,35 +35,7 @@ export async function POST(req: Request) {
 
   let text = "";
   try {
-    // pdfjs directly (no pdf-parse wrapper — it hard-requires a native canvas
-    // module the packaged app can't ship). The legacy build runs headless in
-    // Node; canvas is only needed for RENDERING, and we only extract text.
-    // Kept external via serverExternalPackages so webpack never bundles it.
-    //
-    // pdfjs constructs `new DOMMatrix()` at module scope; when its optional
-    // @napi-rs/canvas polyfill is absent (packaged app), these inert stubs
-    // must exist BEFORE the import evaluates the module.
-    const g = globalThis as Record<string, unknown>;
-    g.DOMMatrix ??= class DOMMatrix {
-      a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
-    };
-    g.ImageData ??= class ImageData {};
-    g.Path2D ??= class Path2D {};
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    const doc = await pdfjs.getDocument({
-      data: new Uint8Array(buf),
-      isEvalSupported: false,
-      disableFontFace: true,
-    }).promise;
-    for (let i = 1; i <= doc.numPages; i++) {
-      const page = await doc.getPage(i);
-      const tc = await page.getTextContent();
-      for (const item of tc.items) {
-        if ("str" in item) text += item.str + (item.hasEOL ? "\n" : " ");
-      }
-      text += "\n";
-    }
-    await doc.destroy();
+    text = await extractPdfText(buf);
   } catch (err) {
     console.error(
       "pdf text extraction failed:",

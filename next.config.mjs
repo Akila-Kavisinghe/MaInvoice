@@ -54,9 +54,29 @@ const nextConfig = {
   // pdfjs-dist must stay unbundled: webpack breaks its Node-environment
   // detection (missing-DOM errors). Text extraction needs no canvas.
   serverExternalPackages: ["@react-pdf/renderer", "pdfjs-dist"],
-  outputFileTracingIncludes: {
-    "/api/local/parse-invoice": ["./node_modules/pdfjs-dist/**/*"],
-  },
+  // pdfjs is used ONLY by the local library parse routes, which 404 on the
+  // hosted platform. Force-tracing its folder is needed for the standalone
+  // desktop build, but on Vercel it drags pnpm's SYMLINKED node_modules dir
+  // into the serverless function → "invalid deployment package for a
+  // Serverless Function". So include it only for the standalone build.
+  ...(process.env.BUILD_STANDALONE === "1"
+    ? {
+        outputFileTracingIncludes: {
+          "/api/local/parse-invoice": ["./node_modules/pdfjs-dist/**/*"],
+          "/api/local/parse-receipt": ["./node_modules/pdfjs-dist/**/*"],
+        },
+      }
+    : {
+        // On Vercel the auto-tracer would still drag pdfjs into these
+        // functions — including the pnpm SYMLINK node_modules/pdfjs-dist,
+        // which Vercel rejects ("invalid deployment package for a Serverless
+        // Function"). These routes 404 on the hosted platform, so drop pdfjs
+        // from their trace entirely.
+        outputFileTracingExcludes: {
+          "/api/local/parse-invoice": ["**/pdfjs-dist", "**/pdfjs-dist/**"],
+          "/api/local/parse-receipt": ["**/pdfjs-dist", "**/pdfjs-dist/**"],
+        },
+      }),
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },
