@@ -345,7 +345,7 @@ function InvoiceList({
             <th className={`w-24 text-right pr-4 ${headCell}`}>Amount</th>
             <th className={`w-16 ${headCell}`}>Date</th>
             <th className={`w-24 ${headCell}`}>Status</th>
-            <th className="w-32"></th>
+            <th className="w-40"></th>
           </tr>
         </thead>
         {years.map((year) => (
@@ -395,6 +395,7 @@ function InvoiceRow({
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   // Receipt staged for upload — confirmed with a paid date before it's sent.
   const [pendingReceipt, setPendingReceipt] = useState<File | null>(null);
   const [receiptDate, setReceiptDate] = useState("");
@@ -403,7 +404,6 @@ function InvoiceRow({
   const inbound = invoice.direction !== "outbound";
 
   async function remove() {
-    if (!window.confirm(`Delete "${filename}" from your invoice folder?`)) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/local/invoices/${invoice.id}`, {
@@ -412,6 +412,7 @@ function InvoiceRow({
       if (res.ok) onChanged();
     } finally {
       setBusy(false);
+      setConfirmDelete(false);
     }
   }
 
@@ -608,54 +609,85 @@ function InvoiceRow({
           </span>
         </td>
         <td className="py-2">
-          <div className="flex items-center justify-end gap-0.5">
-            <a
-              href={`/api/local/invoices/${invoice.id}`}
-              target="_blank"
-              rel="noreferrer"
+          {confirmDelete ? (
+            <div
+              className="flex items-center justify-end gap-1"
               onClick={(e) => e.stopPropagation()}
-              className={iconBtn}
-              title="View PDF"
             >
-              <EyeIcon />
-            </a>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={(e) => {
-                e.stopPropagation();
-                setExpanded(true);
-                setEditing(true);
-              }}
-              className={iconBtn}
-              title="Edit details"
-            >
-              <PenIcon />
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={(e) => {
-                e.stopPropagation();
-                remove();
-              }}
-              className={`${iconBtn} hover:bg-red-500/10 hover:text-red-500`}
-              title="Delete"
-            >
-              <TrashIcon />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setExpanded((x) => !x);
-              }}
-              className={`${iconBtn} ${expanded ? "rotate-180" : ""}`}
-              title={expanded ? "Collapse" : "More"}
-            >
-              <ChevronIcon />
-            </button>
-          </div>
+              <span className="text-xs text-slate-500">Delete?</span>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  remove();
+                }}
+                className="rounded-md bg-red-500 px-2 py-1 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-50"
+              >
+                {busy ? "…" : "Yes"}
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConfirmDelete(false);
+                }}
+                className="rounded-md px-2 py-1 text-xs font-medium text-dim hover:bg-elev hover:text-ink disabled:opacity-50"
+              >
+                No
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-end gap-0.5">
+              <a
+                href={`/api/local/invoices/${invoice.id}`}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className={iconBtn}
+                title="View PDF"
+              >
+                <EyeIcon />
+              </a>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExpanded(true);
+                  setEditing(true);
+                }}
+                className={iconBtn}
+                title="Edit details"
+              >
+                <PenIcon />
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConfirmDelete(true);
+                }}
+                className={`${iconBtn} hover:bg-red-500/10 hover:text-red-500`}
+                title="Delete"
+              >
+                <TrashIcon />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setExpanded((x) => !x);
+                }}
+                className={`${iconBtn} ${expanded ? "rotate-180" : ""}`}
+                title={expanded ? "Collapse" : "More"}
+              >
+                <ChevronIcon />
+              </button>
+            </div>
+          )}
         </td>
       </tr>
 
