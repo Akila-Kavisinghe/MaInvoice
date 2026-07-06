@@ -87,7 +87,7 @@ interface Manifest {
   invoices: Record<string, LibraryEntry>;
 }
 
-const MANIFEST_VERSION = 2;
+const MANIFEST_VERSION = 3;
 const MANIFEST_NAME = "manifest.json";
 
 // Serialise writes so concurrent requests don't clobber the manifest.
@@ -165,6 +165,8 @@ async function writeManifest(manifest: Manifest): Promise<void> {
 /**
  * v1 → v2: entries gain direction ("inbound" — outbound didn't exist yet) and
  * files physically move under Inbound/ so the top level is Inbound/ + Outbound/.
+ * v2 → v3: uploaded/synced files are renamed to the canonical
+ * "Invoice - <who> - <event> - <date>" scheme (receipts follow suit).
  * Idempotent; a file missing on disk keeps its entry as-is (the unindexed
  * rescan is the recovery path).
  */
@@ -173,24 +175,72 @@ function migrateManifest(): Promise<Manifest> {
     const manifest = await readManifestRaw();
     if (manifest.version >= MANIFEST_VERSION) return manifest; // raced
 
-    for (const entry of Object.values(manifest.invoices)) {
-      entry.direction = entry.direction ?? "inbound";
-      if (entry.bandmateName && !entry.contactName) {
-        entry.contactName = entry.bandmateName;
+    if (manifest.version < 2) {
+      for (const entry of Object.values(manifest.invoices)) {
+        entry.direction = entry.direction ?? "inbound";
+        if (entry.bandmateName && !entry.contactName) {
+          entry.contactName = entry.bandmateName;
+        }
+        if (
+          entry.relPath.startsWith("Inbound/") ||
+          entry.relPath.startsWith("Outbound/")
+        ) {
+          continue;
+        }
+        const newRel = path.posix.join("Inbound", entry.relPath);
+        try {
+          await fs.mkdir(path.dirname(resolveSafe(newRel)), { recursive: true });
+          await fs.rename(resolveSafe(entry.relPath), resolveSafe(newRel));
+          entry.relPath = newRel;
+        } catch (err) {
+          console.error("library migration: couldn't move", entry.relPath, err);
+        }
       }
-      if (
-        entry.relPath.startsWith("Inbound/") ||
-        entry.relPath.startsWith("Outbound/")
-      ) {
-        continue;
-      }
-      const newRel = path.posix.join("Inbound", entry.relPath);
-      try {
-        await fs.mkdir(path.dirname(resolveSafe(newRel)), { recursive: true });
-        await fs.rename(resolveSafe(entry.relPath), resolveSafe(newRel));
-        entry.relPath = newRel;
-      } catch (err) {
-        console.error("library migration: couldn't move", entry.relPath, err);
+    }
+
+    if (manifest.version < 3) {
+      for (const entry of Object.values(manifest.invoices)) {
+        // Generated PDFs were canonically named at creation (with the
+        // business as issuer) — leave them alone.
+        if (entry.source === "generated") continue;
+        const ext = path.posix.extname(entry.relPath);
+        const dir = path.posix.dirname(entry.relPath);
+        const oldBase = path.posix.basename(entry.relPath, ext);
+        const newBase = canonicalBasename(entry, oldBase);
+        if (newBase !== oldBase) {
+          try {
+            const newRel =
+              newBase.toLowerCase() === oldBase.toLowerCase()
+                ? path.posix.join(dir, `${newBase}${ext}`)
+                : await uniquePath(dir, newBase, ext);
+            await fs.rename(resolveSafe(entry.relPath), resolveSafe(newRel));
+            entry.relPath = newRel;
+          } catch (err) {
+            console.error("library migration: couldn't rename", entry.relPath, err);
+          }
+        }
+        if (entry.receiptPath) {
+          try {
+            const rExt = path.posix.extname(entry.receiptPath);
+            const invBase = path.posix.basename(entry.relPath, ext);
+            const rBase = sanitizeSegment(`Receipt - ${invBase}`);
+            const rTarget = path.posix.join(dir, `${rBase}${rExt}`);
+            if (entry.receiptPath !== rTarget) {
+              const rNewRel =
+                entry.receiptPath.toLowerCase() === rTarget.toLowerCase()
+                  ? rTarget
+                  : await uniquePath(dir, rBase, rExt);
+              await fs.rename(resolveSafe(entry.receiptPath), resolveSafe(rNewRel));
+              entry.receiptPath = rNewRel;
+            }
+          } catch (err) {
+            console.error(
+              "library migration: couldn't rename receipt",
+              entry.receiptPath,
+              err,
+            );
+          }
+        }
       }
     }
 
@@ -253,6 +303,27 @@ async function actualCaseRelDir(relDir: string): Promise<string> {
   }
 }
 
+/**
+ * "Invoice - <who> - <event> - <date>" built from whatever metadata exists,
+ * falling back to the original filename when there is nothing to build from.
+ * Uploaded and synced files are stored under this name so the folder reads
+ * consistently regardless of what the sender called their PDF.
+ */
+function canonicalBasename(
+  meta: {
+    contactName?: string;
+    bandmateName?: string;
+    eventName?: string;
+    eventDate?: string;
+  },
+  fallbackBase: string,
+): string {
+  const who = meta.contactName || meta.bandmateName;
+  const parts = [who, meta.eventName, meta.eventDate].filter(Boolean) as string[];
+  if (parts.length === 0) return sanitizeSegment(fallbackBase);
+  return sanitizeSegment(["Invoice", ...parts].join(" - "));
+}
+
 /** Write a PDF into the folder and index it. Returns the manifest entry. */
 export async function addInvoice(
   pdf: Buffer,
@@ -264,7 +335,12 @@ export async function addInvoice(
   return chained(async () => {
     await fs.mkdir(resolveSafe(destinationDir(direction, meta)), { recursive: true });
     const relDir = await actualCaseRelDir(destinationDir(direction, meta));
-    const base = sanitizeSegment(filename.replace(/\.pdf$/i, ""));
+    // Generated PDFs arrive already canonically named (with the business as
+    // issuer); everything else is renamed to the canonical scheme.
+    const base =
+      source === "generated"
+        ? sanitizeSegment(filename.replace(/\.pdf$/i, ""))
+        : canonicalBasename(meta, filename.replace(/\.pdf$/i, ""));
     const relPath = await uniquePath(relDir, base, ".pdf");
     await fs.writeFile(resolveSafe(relPath), pdf);
 
@@ -374,10 +450,15 @@ export async function updateInvoice(
     if (patch.amount !== undefined) entry.amount = patch.amount ?? undefined;
     if (patch.notes !== undefined) entry.notes = patch.notes || undefined;
 
-    // The folder is derived from the event ("<year>/<date event>/"), so an
-    // event edit re-files the PDF (and its receipt). Best-effort: if a move
-    // fails the entry keeps its old path — metadata is still updated.
-    if (patch.eventName !== undefined || patch.eventDate !== undefined) {
+    // Detail edits re-file AND re-name: the folder derives from the event
+    // ("<year>/<date event>/"), the filename from who/event/date. Best-effort:
+    // if a move fails the entry keeps its old working path — metadata is
+    // still updated.
+    if (
+      patch.eventName !== undefined ||
+      patch.eventDate !== undefined ||
+      patch.contactName !== undefined
+    ) {
       const wantedDir = destinationDir(entry.direction ?? "inbound", {
         eventName: entry.eventName,
         eventDate: entry.eventDate,
@@ -388,22 +469,48 @@ export async function updateInvoice(
       // SAME physical folder, and moving a file onto itself would trip the
       // collision suffix and duplicate it.
       const newDir = await actualCaseRelDir(wantedDir);
-      if (newDir.toLowerCase() !== oldDir.toLowerCase()) {
-        for (const key of ["relPath", "receiptPath"] as const) {
-          const rel = entry[key];
-          if (!rel) continue;
+      const ext = path.posix.extname(entry.relPath);
+      const oldBase = path.posix.basename(entry.relPath, ext);
+      const newBase =
+        entry.source === "generated" ? oldBase : canonicalBasename(entry, oldBase);
+      const dirChanged = newDir.toLowerCase() !== oldDir.toLowerCase();
+
+      if (dirChanged || newBase !== oldBase) {
+        try {
+          const newRel =
+            !dirChanged && newBase.toLowerCase() === oldBase.toLowerCase()
+              ? path.posix.join(oldDir, `${newBase}${ext}`) // case-only rename
+              : await uniquePath(dirChanged ? newDir : oldDir, newBase, ext);
+          if (newRel !== entry.relPath) {
+            await fs.rename(resolveSafe(entry.relPath), resolveSafe(newRel));
+            entry.relPath = newRel;
+          }
+        } catch (err) {
+          console.error("library: couldn't re-file", entry.relPath, err);
+        }
+        // The receipt lives beside the invoice and carries its name.
+        if (entry.receiptPath) {
           try {
-            const ext = path.posix.extname(rel);
-            const base = path.posix.basename(rel, ext);
-            const newRel = await uniquePath(newDir, base, ext);
-            await fs.rename(resolveSafe(rel), resolveSafe(newRel));
-            entry[key] = newRel; // recorded per file, right after its rename
+            const rOld = entry.receiptPath;
+            const rExt = path.posix.extname(rOld);
+            const invBase = path.posix.basename(entry.relPath, ext);
+            const rDir = path.posix.dirname(entry.relPath);
+            const rBase = sanitizeSegment(`Receipt - ${invBase}`);
+            const rTarget = path.posix.join(rDir, `${rBase}${rExt}`);
+            const rNewRel =
+              rOld.toLowerCase() === rTarget.toLowerCase()
+                ? rTarget
+                : await uniquePath(rDir, rBase, rExt);
+            if (rNewRel !== rOld) {
+              await fs.rename(resolveSafe(rOld), resolveSafe(rNewRel));
+              entry.receiptPath = rNewRel;
+            }
           } catch (err) {
-            console.error("library: couldn't re-file", rel, err);
+            console.error("library: couldn't re-file receipt", entry.receiptPath, err);
           }
         }
         // Drop the old event folder if the moves emptied it.
-        await fs.rmdir(resolveSafe(oldDir)).catch(() => {});
+        if (dirChanged) await fs.rmdir(resolveSafe(oldDir)).catch(() => {});
       }
     }
 

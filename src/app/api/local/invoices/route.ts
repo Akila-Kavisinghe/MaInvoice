@@ -65,7 +65,10 @@ export async function POST(req: Request) {
     ...parsed.data,
     contactName: parsed.data.bandmateName,
   };
-  const entry = await addInvoice(pdf, file.name || "invoice.pdf", "upload", "inbound", meta);
+  // Uploads default to inbound; outbound covers invoices the user issued
+  // outside the app (e.g. made in another tool) and just wants filed.
+  const direction = form.get("direction") === "outbound" ? "outbound" : "inbound";
+  const entry = await addInvoice(pdf, file.name || "invoice.pdf", "upload", direction, meta);
 
   // Create/refresh a contact card for the sender — only when the user opted
   // in on the form (checkbox defaults to on when an email is present).

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Banner, Button, Card, Input, Label, Textarea } from "@/components/ui";
 import type { Contact } from "./lib-types";
 
@@ -17,20 +17,27 @@ const EMPTY_UPLOAD = {
 };
 
 /**
- * Manually file an invoice PDF you already have (inbound). Drop a PDF (or
- * browse) and the app reads it to prefill the details — including recognizing
- * the sender when their email matches an existing contact. Everything stays
- * editable before saving.
+ * Manually file invoice PDFs you already have. Drop one or several PDFs (or
+ * browse) — files queue up and are saved one at a time: the app reads each
+ * PDF to prefill its details (recognizing senders whose email matches a
+ * contact), you confirm, it saves and advances to the next. Event name/date
+ * carry over between files since a batch is usually one gig. Files are
+ * stored under the canonical "Invoice - <who> - <event> - <date>.pdf" name.
  */
 export default function UploadCard({
   contacts = [],
+  eventNames = [],
+  direction = "inbound",
   onUploaded,
 }: {
   contacts?: Contact[];
+  eventNames?: string[];
+  direction?: "inbound" | "outbound";
   onUploaded: () => void;
 }) {
   const [form, setForm] = useState(EMPTY_UPLOAD);
-  const [file, setFile] = useState<File | null>(null);
+  const [queue, setQueue] = useState<File[]>([]);
+  const [total, setTotal] = useState(0); // batch size, for "File 2 of 5"
   const [picked, setPicked] = useState(NEW_SENDER);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [saveContact, setSaveContact] = useState(true);
@@ -41,12 +48,16 @@ export default function UploadCard({
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const eventsListId = useId();
+
+  const file = queue[0] ?? null;
+  const outbound = direction === "outbound";
 
   function update<K extends keyof typeof EMPTY_UPLOAD>(key: K, value: string) {
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  /** Selecting a contact autofills who the invoice is from. */
+  /** Selecting a contact autofills who the invoice is from / billed to. */
   function pickContact(email: string) {
     setPicked(email);
     if (email === NEW_SENDER) return;
@@ -80,20 +91,10 @@ export default function UploadCard({
     [],
   );
 
-  async function chooseFile(f: File) {
-    if (!/\.pdf$/i.test(f.name) && f.type !== "application/pdf") {
-      setError("Only PDF files can be filed as invoices.");
-      return;
-    }
-    setError(null);
-    setSuccess(null);
-    setParseNote(null);
-    setFile(f);
-    swapPreview(f);
-
-    // Read the PDF and prefill whatever we can — only into EMPTY fields, so
-    // nothing the user already typed gets clobbered.
+  /** Read a PDF and prefill EMPTY fields only — never clobber typed values. */
+  async function parseInto(f: File) {
     setParsing(true);
+    setParseNote(null);
     try {
       const body = new FormData();
       body.set("file", f);
@@ -128,6 +129,22 @@ export default function UploadCard({
     }
   }
 
+  function chooseFiles(list: FileList | File[]) {
+    const pdfs = [...list].filter(
+      (f) => /\.pdf$/i.test(f.name) || f.type === "application/pdf",
+    );
+    if (pdfs.length === 0) {
+      setError("Only PDF files can be filed as invoices.");
+      return;
+    }
+    setError(null);
+    setSuccess(null);
+    setQueue(pdfs);
+    setTotal(pdfs.length);
+    swapPreview(pdfs[0]);
+    parseInto(pdfs[0]);
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -142,6 +159,7 @@ export default function UploadCard({
     body.set("file", file);
     for (const [k, v] of Object.entries(form)) body.set(k, v);
     body.set("saveContact", String(saveContact));
+    body.set("direction", direction);
 
     setLoading(true);
     try {
@@ -151,19 +169,39 @@ export default function UploadCard({
         setError(data.error ?? "Upload failed");
         return;
       }
-      setSuccess(
-        data.contactSaved
-          ? `Invoice added — ${form.bandmateName || form.contactEmail} saved to your contacts.`
-          : "Invoice added to your library.",
-      );
-      setForm(EMPTY_UPLOAD);
-      setFile(null);
-      swapPreview(null);
+      onUploaded();
+
+      const rest = queue.slice(1);
+      setQueue(rest);
       setPicked(NEW_SENDER);
       setSaveContact(true);
       setParseNote(null);
-      if (inputRef.current) inputRef.current.value = "";
-      onUploaded();
+      if (rest.length > 0) {
+        // Same gig, next bandmate: keep the event, clear the person-specific
+        // fields, and prefill from the next PDF.
+        setForm((f) => ({
+          ...EMPTY_UPLOAD,
+          eventName: f.eventName,
+          eventDate: f.eventDate,
+        }));
+        setSuccess(
+          `Saved "${file.name}" — ${rest.length} file${rest.length === 1 ? "" : "s"} to go.`,
+        );
+        swapPreview(rest[0]);
+        parseInto(rest[0]);
+      } else {
+        setForm(EMPTY_UPLOAD);
+        setTotal(0);
+        swapPreview(null);
+        if (inputRef.current) inputRef.current.value = "";
+        setSuccess(
+          data.contactSaved
+            ? `Invoice added — ${form.bandmateName || form.contactEmail} saved to your contacts.`
+            : total > 1
+              ? `All ${total} invoices added to your library.`
+              : "Invoice added to your library.",
+        );
+      }
     } catch {
       setError("Network error");
     } finally {
@@ -182,10 +220,14 @@ export default function UploadCard({
           : ""
       }`}
     >
-      <h2 className="text-lg font-semibold text-ink">Upload an invoice PDF</h2>
+      <h2 className="text-lg font-semibold text-ink">
+        {outbound ? "Upload an invoice you issued" : "Upload an invoice PDF"}
+      </h2>
       <p className="mt-1 text-sm text-dim">
-        Drop in any invoice PDF — the app reads it to prefill the details, then
-        files it into your folder. Everything is editable.
+        {outbound
+          ? "A PDF you already sent to a client — filed under Outbound for your income records."
+          : "Drop in any invoice PDF — the app reads it to prefill the details, then files it into your folder."}{" "}
+        You can drop several at once; they save one at a time.
       </p>
       <div className={previewUrl ? "grid gap-6 lg:grid-cols-2" : ""}>
       <form onSubmit={onSubmit} className="mt-4 space-y-4" noValidate>
@@ -199,8 +241,7 @@ export default function UploadCard({
           onDrop={(e) => {
             e.preventDefault();
             setDragOver(false);
-            const f = e.dataTransfer.files?.[0];
-            if (f) chooseFile(f);
+            if (e.dataTransfer.files?.length) chooseFiles(e.dataTransfer.files);
           }}
           onClick={() => inputRef.current?.click()}
           role="button"
@@ -220,51 +261,38 @@ export default function UploadCard({
             <>
               <p className="text-sm font-medium text-ink">{file.name}</p>
               <p className="mt-1 text-xs text-muted">
-                {parsing ? "Reading PDF…" : "Click or drop to replace"}
+                {parsing
+                  ? "Reading PDF…"
+                  : total > 1
+                    ? `File ${total - queue.length + 1} of ${total}`
+                    : "Click or drop to replace"}
               </p>
             </>
           ) : (
             <>
               <p className="text-sm font-medium text-ink">
-                Drag &amp; drop an invoice PDF here
+                Drag &amp; drop invoice PDFs here
               </p>
-              <p className="mt-1 text-xs text-muted">or click to browse</p>
+              <p className="mt-1 text-xs text-muted">or click to browse — multiple files welcome</p>
             </>
           )}
           <input
             ref={inputRef}
             type="file"
             accept="application/pdf,.pdf"
+            multiple
             className="hidden"
             onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) chooseFile(f);
+              if (e.target.files?.length) chooseFiles(e.target.files);
             }}
           />
         </div>
 
         {parseNote ? <Banner tone="info">{parseNote}</Banner> : null}
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <Label>Event name</Label>
-            <Input
-              value={form.eventName}
-              onChange={(e) => update("eventName", e.target.value)}
-            />
-          </div>
-          <div>
-            <Label>Event date</Label>
-            <Input
-              type="date"
-              value={form.eventDate}
-              onChange={(e) => update("eventDate", e.target.value)}
-            />
-          </div>
-        </div>
         {contacts.length > 0 ? (
           <div>
-            <Label>Sender</Label>
+            <Label>{outbound ? "Client" : "Sender"}</Label>
             <select
               value={picked}
               onChange={(e) => pickContact(e.target.value)}
@@ -281,7 +309,30 @@ export default function UploadCard({
         ) : null}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <Label>Who it&apos;s from</Label>
+            <Label>Event name</Label>
+            <Input
+              value={form.eventName}
+              onChange={(e) => update("eventName", e.target.value)}
+              list={eventsListId}
+            />
+            <datalist id={eventsListId}>
+              {eventNames.map((n) => (
+                <option key={n} value={n} />
+              ))}
+            </datalist>
+          </div>
+          <div>
+            <Label>Event date</Label>
+            <Input
+              type="date"
+              value={form.eventDate}
+              onChange={(e) => update("eventDate", e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <Label>{outbound ? "Billed to" : "Who it's from"}</Label>
             <Input
               value={form.bandmateName}
               onChange={(e) => update("bandmateName", e.target.value)}
@@ -314,7 +365,7 @@ export default function UploadCard({
               disabled={!form.contactEmail.trim()}
               onChange={(e) => setSaveContact(e.target.checked)}
             />
-            Save {form.bandmateName.trim() || "the sender"} to my contacts
+            Save {form.bandmateName.trim() || (outbound ? "the client" : "the sender")} to my contacts
             {form.contactEmail.trim() ? "" : " (enter their email above)"}
           </label>
         )}
@@ -350,7 +401,11 @@ export default function UploadCard({
         {error ? <Banner tone="error">{error}</Banner> : null}
         {success ? <Banner tone="success">{success}</Banner> : null}
         <Button type="submit" disabled={loading || parsing} className="w-full">
-          {loading ? "Adding…" : "Add invoice"}
+          {loading
+            ? "Adding…"
+            : queue.length > 1
+              ? `Add invoice (${queue.length - 1} more after this)`
+              : "Add invoice"}
         </Button>
       </form>
 

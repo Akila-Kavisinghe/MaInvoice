@@ -186,6 +186,7 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
         knownContactEmails={new Set(contacts.map((c) => c.email))}
         categoryTags={categoryTags}
         allEventTags={allEventTags(invoices)}
+        allEventNames={allEventNames(invoices)}
         onChanged={load}
       />
     </>
@@ -197,6 +198,13 @@ function allEventTags(invoices: LibraryEntry[]): string[] {
   return [...new Set(invoices.flatMap((i) => i.eventTags ?? []))].sort((a, b) =>
     a.localeCompare(b),
   );
+}
+
+/** Every event name in use — autofill suggestions for recurring gigs. */
+function allEventNames(invoices: LibraryEntry[]): string[] {
+  return [
+    ...new Set(invoices.map((i) => i.eventName).filter((n): n is string => !!n)),
+  ].sort((a, b) => a.localeCompare(b));
 }
 
 function FilterBar({
@@ -287,6 +295,7 @@ function InvoiceList({
   knownContactEmails,
   categoryTags,
   allEventTags,
+  allEventNames,
   onChanged,
 }: {
   invoices: LibraryEntry[];
@@ -294,6 +303,7 @@ function InvoiceList({
   knownContactEmails: Set<string>;
   categoryTags: CategoryTag[];
   allEventTags: string[];
+  allEventNames: string[];
   onChanged: () => void;
 }) {
   if (invoices.length === 0) {
@@ -338,6 +348,7 @@ function InvoiceList({
                 knownContact={!inv.contactEmail || knownContactEmails.has(inv.contactEmail)}
                 categoryTags={categoryTags}
                 allEventTags={allEventTags}
+                allEventNames={allEventNames}
                 onChanged={onChanged}
               />
             ))}
@@ -353,6 +364,7 @@ function InvoiceRow({
   knownContact,
   categoryTags,
   allEventTags,
+  allEventNames,
   onChanged,
 }: {
   invoice: LibraryEntry;
@@ -360,6 +372,7 @@ function InvoiceRow({
   knownContact: boolean;
   categoryTags: CategoryTag[];
   allEventTags: string[];
+  allEventNames: string[];
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -708,6 +721,7 @@ function InvoiceRow({
       {editing ? (
         <EditDetailsForm
           invoice={invoice}
+          eventNames={allEventNames}
           onClose={() => setEditing(false)}
           onSaved={onChanged}
         />
@@ -809,10 +823,12 @@ function EventTagEditor({
  */
 function EditDetailsForm({
   invoice,
+  eventNames,
   onClose,
   onSaved,
 }: {
   invoice: LibraryEntry;
+  eventNames: string[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -887,7 +903,13 @@ function EditDetailsForm({
           <Input
             value={f.eventName}
             onChange={(e) => set("eventName", e.target.value)}
+            list={`edit-events-${invoice.id}`}
           />
+          <datalist id={`edit-events-${invoice.id}`}>
+            {eventNames.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
         </div>
         <div>
           <Label>Event date</Label>

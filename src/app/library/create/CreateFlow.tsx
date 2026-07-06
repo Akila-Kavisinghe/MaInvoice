@@ -11,7 +11,9 @@ import UploadCard from "../UploadCard";
 type Step =
   | "direction" // inbound or outbound?
   | "inbound-how" // link or upload?
+  | "outbound-how" // generate or upload?
   | "outbound"
+  | "outbound-upload"
   | "link"
   | "upload";
 
@@ -31,6 +33,7 @@ const EMPTY_BUSINESS: BusinessInfo = {
 export default function CreateFlow({ hasFolder }: { hasFolder: boolean }) {
   const [step, setStep] = useState<Step>("direction");
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [eventNames, setEventNames] = useState<string[]>([]);
   const [business, setBusiness] = useState<BusinessInfo>(EMPTY_BUSINESS);
   const [remoteConfigured, setRemoteConfigured] = useState(false);
 
@@ -38,6 +41,18 @@ export default function CreateFlow({ hasFolder }: { hasFolder: boolean }) {
     fetch("/api/local/contacts")
       .then((r) => (r.ok ? r.json() : { contacts: [] }))
       .then((d) => setContacts(d.contacts ?? []))
+      .catch(() => {});
+    // Existing event names feed the autofill suggestions — a batch of
+    // invoices for one gig reuses the same event.
+    fetch("/api/local/invoices")
+      .then((r) => (r.ok ? r.json() : { invoices: [] }))
+      .then((d) => {
+        const names = new Set<string>();
+        for (const inv of d.invoices ?? []) {
+          if (inv.eventName) names.add(inv.eventName);
+        }
+        setEventNames([...names].sort((a, b) => a.localeCompare(b)));
+      })
       .catch(() => {});
     fetch("/api/local/settings")
       .then((r) => r.json())
@@ -92,8 +107,8 @@ export default function CreateFlow({ hasFolder }: { hasFolder: boolean }) {
             <ChoiceCard
               emoji="📤"
               title="Outbound"
-              subtitle="I'm requesting money — generate an invoice from my business to a client or venue."
-              onClick={() => setStep("outbound")}
+              subtitle="I'm requesting money — generate an invoice to a client, or file one I already sent."
+              onClick={() => setStep("outbound-how")}
             />
           </div>
         </>
@@ -120,9 +135,42 @@ export default function CreateFlow({ hasFolder }: { hasFolder: boolean }) {
         </>
       ) : null}
 
+      {step === "outbound-how" ? (
+        <>
+          <p className="mt-1 text-sm text-dim">Do you need a new PDF, or do you have one?</p>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <ChoiceCard
+              emoji="🧾"
+              title="Generate an invoice"
+              subtitle="Create the PDF here — from your business to a client or venue."
+              onClick={() => setStep("outbound")}
+            />
+            <ChoiceCard
+              emoji="📄"
+              title="Upload a PDF"
+              subtitle="I already sent an invoice made elsewhere — just file and track it."
+              onClick={() => setStep("outbound-upload")}
+            />
+          </div>
+          {back("direction", "Back")}
+        </>
+      ) : null}
+
+      {step === "outbound-upload" ? (
+        <>
+          {back("outbound-how", "Back")}
+          <UploadCard
+            contacts={contacts}
+            eventNames={eventNames}
+            direction="outbound"
+            onUploaded={() => {}}
+          />
+        </>
+      ) : null}
+
       {step === "outbound" ? (
         <>
-          {back("direction", "Start over")}
+          {back("outbound-how", "Back")}
           {!business.name || !business.email ? (
             <div className="mt-3">
               <Banner tone="info">
@@ -135,7 +183,7 @@ export default function CreateFlow({ hasFolder }: { hasFolder: boolean }) {
               </Banner>
             </div>
           ) : null}
-          <OutboundForm contacts={contacts} onCreated={() => {}} />
+          <OutboundForm contacts={contacts} eventNames={eventNames} onCreated={() => {}} />
         </>
       ) : null}
 
@@ -149,7 +197,7 @@ export default function CreateFlow({ hasFolder }: { hasFolder: boolean }) {
       {step === "upload" ? (
         <>
           {back("inbound-how", "Back")}
-          <UploadCard contacts={contacts} onUploaded={() => {}} />
+          <UploadCard contacts={contacts} eventNames={eventNames} onUploaded={() => {}} />
         </>
       ) : null}
     </>

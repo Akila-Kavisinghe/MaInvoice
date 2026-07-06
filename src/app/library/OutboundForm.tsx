@@ -29,9 +29,11 @@ interface Created {
 /** Generate an invoice YOU send to a client (outbound). */
 export default function OutboundForm({
   contacts,
+  eventNames = [],
   onCreated,
 }: {
   contacts: Contact[];
+  eventNames?: string[];
   onCreated: () => void;
 }) {
   const [form, setForm] = useState(EMPTY);
@@ -165,7 +167,13 @@ export default function OutboundForm({
             <Input
               value={form.eventName}
               onChange={(e) => update("eventName", e.target.value)}
+              list="outbound-event-names"
             />
+            <datalist id="outbound-event-names">
+              {eventNames.map((n) => (
+                <option key={n} value={n} />
+              ))}
+            </datalist>
           </div>
           <div>
             <Label hint="(optional)">Event date</Label>
