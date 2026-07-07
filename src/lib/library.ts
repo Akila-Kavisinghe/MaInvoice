@@ -43,10 +43,14 @@ export interface LibraryEntry {
   contactName?: string;
   /** Inbound only: user confirmed the sender emailed this invoice in. */
   emailReceived?: boolean;
-  /** Payment receipt paired with this invoice (same folder). */
-  receiptPath?: string;
+  /** Payment receipts paired with this invoice (same folder). May be several
+   * for a split/partial payment. */
+  receiptPaths?: string[];
   /** Set when a receipt is attached or the row is manually marked paid. */
   paidAt?: string; // ISO timestamp
+  /** Free-text reason recorded when the invoice is marked paid without a
+   * receipt (e.g. "Cash", "Paid in kind"). */
+  paidReason?: string;
   /**
    * Server pending-invoice id this entry was synced from. While present, a
    * copy of the PDF still exists on the website — it is only deleted there
@@ -91,7 +95,7 @@ interface Manifest {
   invoices: Record<string, LibraryEntry>;
 }
 
-const MANIFEST_VERSION = 3;
+const MANIFEST_VERSION = 4;
 const MANIFEST_NAME = "manifest.json";
 
 // Serialise writes so concurrent requests don't clobber the manifest.
@@ -223,27 +227,39 @@ function migrateManifest(): Promise<Manifest> {
             console.error("library migration: couldn't rename", entry.relPath, err);
           }
         }
-        if (entry.receiptPath) {
+        const legacy = entry as LibraryEntry & { receiptPath?: string };
+        if (legacy.receiptPath) {
           try {
-            const rExt = path.posix.extname(entry.receiptPath);
+            const rExt = path.posix.extname(legacy.receiptPath);
             const invBase = path.posix.basename(entry.relPath, ext);
             const rBase = sanitizeSegment(`Receipt - ${invBase}`);
             const rTarget = path.posix.join(dir, `${rBase}${rExt}`);
-            if (entry.receiptPath !== rTarget) {
+            if (legacy.receiptPath !== rTarget) {
               const rNewRel =
-                entry.receiptPath.toLowerCase() === rTarget.toLowerCase()
+                legacy.receiptPath.toLowerCase() === rTarget.toLowerCase()
                   ? rTarget
                   : await uniquePath(dir, rBase, rExt);
-              await fs.rename(resolveSafe(entry.receiptPath), resolveSafe(rNewRel));
-              entry.receiptPath = rNewRel;
+              await fs.rename(resolveSafe(legacy.receiptPath), resolveSafe(rNewRel));
+              legacy.receiptPath = rNewRel;
             }
           } catch (err) {
             console.error(
               "library migration: couldn't rename receipt",
-              entry.receiptPath,
+              legacy.receiptPath,
               err,
             );
           }
+        }
+      }
+    }
+
+    if (manifest.version < 4) {
+      // Single receiptPath → receiptPaths array (invoices can hold several).
+      for (const entry of Object.values(manifest.invoices)) {
+        const legacy = entry as LibraryEntry & { receiptPath?: string };
+        if (legacy.receiptPath) {
+          entry.receiptPaths = [legacy.receiptPath];
+          delete legacy.receiptPath;
         }
       }
     }
@@ -405,6 +421,8 @@ export async function updateInvoice(
   patch: {
     emailReceived?: boolean;
     paid?: boolean;
+    /** Optional note when marking paid without a receipt (e.g. "Cash"). */
+    paidReason?: string;
     taxCategory?: string | null;
     categoryTag?: string | null;
     eventTags?: string[];
@@ -427,8 +445,16 @@ export async function updateInvoice(
       entry.emailReceived = patch.emailReceived;
     }
     if (typeof patch.paid === "boolean") {
-      // Marking unpaid clears the timestamp but keeps any receipt file.
+      // Marking unpaid clears the timestamp AND the reason but keeps any
+      // receipt files. The reason is only meaningful while paid.
       entry.paidAt = patch.paid ? new Date().toISOString() : undefined;
+      if (!patch.paid) entry.paidReason = undefined;
+      else if (patch.paidReason !== undefined) {
+        entry.paidReason = patch.paidReason || undefined;
+      }
+    } else if (patch.paidReason !== undefined) {
+      // Editing the reason on an already-paid row.
+      entry.paidReason = patch.paidReason || undefined;
     }
     if (patch.taxCategory !== undefined) {
       entry.taxCategory = patch.taxCategory ?? undefined;
@@ -494,25 +520,27 @@ export async function updateInvoice(
         } catch (err) {
           console.error("library: couldn't re-file", entry.relPath, err);
         }
-        // The receipt lives beside the invoice and carries its name.
-        if (entry.receiptPath) {
-          try {
-            const rOld = entry.receiptPath;
-            const rExt = path.posix.extname(rOld);
-            const invBase = path.posix.basename(entry.relPath, ext);
-            const rDir = path.posix.dirname(entry.relPath);
-            const rBase = sanitizeSegment(`Receipt - ${invBase}`);
-            const rTarget = path.posix.join(rDir, `${rBase}${rExt}`);
-            const rNewRel =
-              rOld.toLowerCase() === rTarget.toLowerCase()
-                ? rTarget
-                : await uniquePath(rDir, rBase, rExt);
-            if (rNewRel !== rOld) {
-              await fs.rename(resolveSafe(rOld), resolveSafe(rNewRel));
-              entry.receiptPath = rNewRel;
+        // Receipts live beside the invoice and carry its name.
+        if (entry.receiptPaths?.length) {
+          const rDir = path.posix.dirname(entry.relPath);
+          const invBase = path.posix.basename(entry.relPath, ext);
+          const rBase = sanitizeSegment(`Receipt - ${invBase}`);
+          for (let i = 0; i < entry.receiptPaths.length; i++) {
+            const rOld = entry.receiptPaths[i];
+            try {
+              const rExt = path.posix.extname(rOld);
+              const rTarget = path.posix.join(rDir, `${rBase}${rExt}`);
+              const rNewRel =
+                rOld.toLowerCase() === rTarget.toLowerCase()
+                  ? rTarget
+                  : await uniquePath(rDir, rBase, rExt);
+              if (rNewRel !== rOld) {
+                await fs.rename(resolveSafe(rOld), resolveSafe(rNewRel));
+                entry.receiptPaths[i] = rNewRel;
+              }
+            } catch (err) {
+              console.error("library: couldn't re-file receipt", rOld, err);
             }
-          } catch (err) {
-            console.error("library: couldn't re-file receipt", entry.receiptPath, err);
           }
         }
         // Drop the old event folder if the moves emptied it.
@@ -565,7 +593,7 @@ export async function scanUnindexed(): Promise<string[]> {
   const indexed = new Set<string>();
   for (const e of Object.values(manifest.invoices)) {
     indexed.add(e.relPath.toLowerCase());
-    if (e.receiptPath) indexed.add(e.receiptPath.toLowerCase());
+    for (const r of e.receiptPaths ?? []) indexed.add(r.toLowerCase());
   }
   const found: string[] = [];
 
@@ -610,7 +638,7 @@ export async function deleteInvoice(id: string): Promise<boolean> {
     const manifest = await readManifestRaw();
     const entry = manifest.invoices[id];
     if (!entry) return false;
-    for (const rel of [entry.relPath, entry.receiptPath]) {
+    for (const rel of [entry.relPath, ...(entry.receiptPaths ?? [])]) {
       if (!rel) continue;
       try {
         await fs.unlink(resolveSafe(rel));
@@ -630,8 +658,10 @@ export async function deleteInvoice(id: string): Promise<boolean> {
 
 /**
  * Attach a payment receipt to an invoice. Any file type; stored in the SAME
- * folder as the invoice as "Receipt - <invoice basename>.<ext>". Marks the
- * invoice paid. Replacing an existing receipt removes the old file.
+ * folder as the invoice as "Receipt - <invoice basename>.<ext>" (a numeric
+ * suffix disambiguates additional receipts). Appends — an invoice can hold
+ * several receipts for a split/partial payment. Marks the invoice paid and
+ * clears any manual paid-reason (there's a real receipt now).
  */
 export async function attachReceipt(
   id: string,
@@ -655,18 +685,11 @@ export async function attachReceipt(
       .replace(/\.pdf$/i, "");
     const base = sanitizeSegment(`Receipt - ${invoiceBase}`);
 
-    if (entry.receiptPath) {
-      try {
-        await fs.unlink(resolveSafe(entry.receiptPath));
-      } catch {
-        /* old receipt already gone */
-      }
-    }
-
     const relPath = await uniquePath(dir, base, ext.startsWith(".") ? ext : `.${ext}`);
     await fs.writeFile(resolveSafe(relPath), file);
 
-    entry.receiptPath = relPath;
+    entry.receiptPaths = [...(entry.receiptPaths ?? []), relPath];
+    entry.paidReason = undefined;
     // Noon UTC keeps the chosen calendar date stable in every timezone.
     entry.paidAt = paidDate
       ? `${paidDate}T12:00:00.000Z`
@@ -676,34 +699,45 @@ export async function attachReceipt(
   });
 }
 
+/** One receipt file by index (default 0). */
 export async function getReceiptFile(
   id: string,
-): Promise<{ entry: LibraryEntry; file: Buffer } | null> {
+  index = 0,
+): Promise<{ entry: LibraryEntry; relPath: string; file: Buffer } | null> {
   const manifest = await readManifest();
   const entry = manifest.invoices[id];
-  if (!entry?.receiptPath) return null;
+  const relPath = entry?.receiptPaths?.[index];
+  if (!entry || !relPath) return null;
   try {
-    return { entry, file: await fs.readFile(resolveSafe(entry.receiptPath)) };
+    return { entry, relPath, file: await fs.readFile(resolveSafe(relPath)) };
   } catch {
     return null;
   }
 }
 
-/** Detach and delete the receipt file. Keeps paidAt (toggle that separately). */
-export async function removeReceipt(id: string): Promise<LibraryEntry | null> {
+/**
+ * Detach and delete one receipt (by index; default removes the last). Keeps
+ * paidAt even when the last receipt goes — untoggle paid separately.
+ */
+export async function removeReceipt(
+  id: string,
+  index?: number,
+): Promise<LibraryEntry | null> {
   return chained(async () => {
     const manifest = await readManifestRaw();
     const entry = manifest.invoices[id];
-    if (!entry) return null;
-    if (entry.receiptPath) {
-      try {
-        await fs.unlink(resolveSafe(entry.receiptPath));
-      } catch {
-        /* already gone */
-      }
-      entry.receiptPath = undefined;
-      await writeManifest(manifest);
+    if (!entry?.receiptPaths?.length) return entry ?? null;
+    const i = index ?? entry.receiptPaths.length - 1;
+    const rel = entry.receiptPaths[i];
+    if (!rel) return entry;
+    try {
+      await fs.unlink(resolveSafe(rel));
+    } catch {
+      /* already gone */
     }
+    entry.receiptPaths.splice(i, 1);
+    if (entry.receiptPaths.length === 0) entry.receiptPaths = undefined;
+    await writeManifest(manifest);
     return entry;
   });
 }

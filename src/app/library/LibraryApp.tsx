@@ -53,6 +53,13 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
 
   useEffect(load, [load]);
 
+  // Deep link from the Contacts page: /library?contact=<email> pre-filters
+  // the list to that contact.
+  useEffect(() => {
+    const email = new URLSearchParams(window.location.search).get("contact");
+    if (email) setContactFilter(email.toLowerCase());
+  }, []);
+
   useEffect(() => {
     fetch("/api/local/settings")
       .then((r) => r.json())
@@ -397,9 +404,14 @@ function InvoiceRow({
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // Receipt staged for upload — confirmed with a paid date before it's sent.
-  const [pendingReceipt, setPendingReceipt] = useState<File | null>(null);
+  // Receipts staged for upload — a queue, saved one at a time so each keeps
+  // its own (auto-detected) payment date.
+  const [pendingReceipts, setPendingReceipts] = useState<File[]>([]);
   const [receiptDate, setReceiptDate] = useState("");
   const [receiptDateAuto, setReceiptDateAuto] = useState(false);
+  // Inline "mark paid" reason capture (no receipt).
+  const [markingPaid, setMarkingPaid] = useState(false);
+  const [paidReasonDraft, setPaidReasonDraft] = useState("");
   const receiptRef = useRef<HTMLInputElement>(null);
   const filename = invoice.relPath.split("/").pop() ?? invoice.relPath;
   const inbound = invoice.direction !== "outbound";
@@ -420,6 +432,7 @@ function InvoiceRow({
   async function patch(body: {
     emailReceived?: boolean;
     paid?: boolean;
+    paidReason?: string;
     taxCategory?: string | null;
     categoryTag?: string | null;
     eventTags?: string[];
@@ -442,17 +455,15 @@ function InvoiceRow({
     }
   }
 
-  async function stageReceipt(file: File) {
-    setPendingReceipt(file);
+  // Set the "Paid on" field for the queue's head file, auto-detecting the
+  // date off a PDF receipt (e.g. TD e-transfer's "Date Sent"). Best-effort.
+  async function detectDate(file: File) {
     setReceiptDateAuto(false);
-    // Default to the existing paid date (re-attaching) or today.
     setReceiptDate(
       invoice.paidAt
         ? invoice.paidAt.slice(0, 10)
         : new Date().toLocaleDateString("en-CA"),
     );
-    // Read the payment date off a PDF receipt (e.g. TD e-transfer's
-    // "Date Sent") and prefill it. Best-effort; images can't be read.
     if (/\.pdf$/i.test(file.name) || file.type === "application/pdf") {
       try {
         const body = new FormData();
@@ -469,27 +480,62 @@ function InvoiceRow({
     }
   }
 
+  async function stageReceipts(files: File[]) {
+    if (files.length === 0) return;
+    setPendingReceipts(files);
+    await detectDate(files[0]);
+  }
+
   async function uploadReceipt() {
-    if (!pendingReceipt) return;
+    const file = pendingReceipts[0];
+    if (!file) return;
     setBusy(true);
     try {
       const body = new FormData();
-      body.set("file", pendingReceipt);
+      body.set("file", file);
       if (receiptDate) body.set("paidDate", receiptDate);
       const res = await fetch(`/api/local/invoices/${invoice.id}/receipt`, {
         method: "POST",
         body,
       });
-      if (res.ok) {
-        setPendingReceipt(null);
-        onChanged();
-      } else {
+      if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         window.alert(data.error ?? "Receipt upload failed");
+        return;
+      }
+      onChanged();
+      const rest = pendingReceipts.slice(1);
+      setPendingReceipts(rest);
+      if (rest.length > 0) {
+        await detectDate(rest[0]);
+      } else if (receiptRef.current) {
+        receiptRef.current.value = "";
       }
     } finally {
       setBusy(false);
-      if (receiptRef.current) receiptRef.current.value = "";
+    }
+  }
+
+  async function markPaid() {
+    setBusy(true);
+    try {
+      await patch({ paid: true, paidReason: paidReasonDraft.trim() });
+      setMarkingPaid(false);
+      setPaidReasonDraft("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeReceiptAt(i: number) {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/local/invoices/${invoice.id}/receipt?i=${i}`, {
+        method: "DELETE",
+      });
+      if (res.ok) onChanged();
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -726,26 +772,40 @@ function InvoiceRow({
                     month: "short",
                     day: "numeric",
                   })}
+                  {invoice.paidReason ? ` · ${invoice.paidReason}` : ""}
                 </span>
-                {invoice.receiptPath ? (
-                  <a
-                    href={`/api/local/invoices/${invoice.id}/receipt`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className={`${flagButton} text-accent hover:bg-elev`}
+                {(invoice.receiptPaths ?? []).map((rp, i) => (
+                  <span
+                    key={rp}
+                    className="inline-flex items-center gap-1 rounded-lg bg-elev px-1.5 py-1 text-xs"
                   >
-                    View receipt
-                  </a>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => receiptRef.current?.click()}
-                    disabled={busy}
-                    className={`${flagButton} text-dim hover:bg-elev hover:text-ink`}
-                  >
-                    Attach receipt
-                  </button>
-                )}
+                    <a
+                      href={`/api/local/invoices/${invoice.id}/receipt?i=${i}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-accent hover:underline"
+                    >
+                      Receipt{(invoice.receiptPaths?.length ?? 0) > 1 ? ` ${i + 1}` : ""}
+                    </a>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => removeReceiptAt(i)}
+                      className="text-muted hover:text-danger disabled:opacity-40"
+                      title="Remove this receipt"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => receiptRef.current?.click()}
+                  disabled={busy}
+                  className={`${flagButton} text-dim hover:bg-elev hover:text-ink`}
+                >
+                  + receipt
+                </button>
                 <button
                   type="button"
                   onClick={() => patch({ paid: false })}
@@ -755,6 +815,45 @@ function InvoiceRow({
                   Mark unpaid
                 </button>
               </>
+            ) : markingPaid ? (
+              <span className="inline-flex items-center gap-1.5">
+                <input
+                  autoFocus
+                  value={paidReasonDraft}
+                  onChange={(e) => setPaidReasonDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      markPaid();
+                    }
+                    if (e.key === "Escape") {
+                      setMarkingPaid(false);
+                      setPaidReasonDraft("");
+                    }
+                  }}
+                  placeholder="Reason (optional) — e.g. Cash"
+                  className="w-56 rounded-lg border border-hair bg-panel px-2 py-1 text-xs text-ink outline-none focus:border-accent"
+                />
+                <button
+                  type="button"
+                  onClick={markPaid}
+                  disabled={busy}
+                  className={`${flagButton} bg-success/10 text-success hover:brightness-110`}
+                >
+                  {busy ? "…" : "Mark paid"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMarkingPaid(false);
+                    setPaidReasonDraft("");
+                  }}
+                  disabled={busy}
+                  className={`${flagButton} text-dim hover:bg-elev hover:text-ink`}
+                >
+                  Cancel
+                </button>
+              </span>
             ) : (
               <>
                 <button
@@ -767,7 +866,10 @@ function InvoiceRow({
                 </button>
                 <button
                   type="button"
-                  onClick={() => patch({ paid: true })}
+                  onClick={() => {
+                    setPaidReasonDraft("");
+                    setMarkingPaid(true);
+                  }}
                   disabled={busy}
                   className={`${flagButton} text-dim hover:bg-elev hover:text-ink`}
                 >
@@ -875,10 +977,13 @@ function InvoiceRow({
             busy={busy}
             onChange={(eventTags) => patch({ eventTags })}
           />
-          {pendingReceipt ? (
+          {pendingReceipts.length > 0 ? (
             <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[10px] border border-hair bg-elev px-3 py-2">
-              <span className="max-w-48 truncate text-xs font-medium text-ink">
-                {pendingReceipt.name}
+              <span className="max-w-56 truncate text-xs font-medium text-ink">
+                {pendingReceipts[0].name}
+                {pendingReceipts.length > 1
+                  ? ` (+${pendingReceipts.length - 1} more)`
+                  : ""}
               </span>
               <label className="flex items-center gap-1.5 text-xs text-dim">
                 Paid on
@@ -906,13 +1011,17 @@ function InvoiceRow({
                 disabled={busy || !receiptDate}
                 className={`${flagButton} bg-accent/10 text-accent hover:brightness-110`}
               >
-                {busy ? "Attaching…" : "Attach"}
+                {busy
+                  ? "Attaching…"
+                  : pendingReceipts.length > 1
+                    ? "Attach & next"
+                    : "Attach"}
               </button>
               <button
                 type="button"
                 disabled={busy}
                 onClick={() => {
-                  setPendingReceipt(null);
+                  setPendingReceipts([]);
                   if (receiptRef.current) receiptRef.current.value = "";
                 }}
                 className={`${flagButton} text-dim hover:bg-panel hover:text-ink`}
@@ -924,10 +1033,10 @@ function InvoiceRow({
           <input
             ref={receiptRef}
             type="file"
+            multiple
             className="hidden"
             onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) stageReceipt(f);
+              if (e.target.files?.length) stageReceipts([...e.target.files]);
             }}
           />
 

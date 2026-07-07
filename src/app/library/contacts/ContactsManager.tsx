@@ -169,7 +169,10 @@ function ContactRow({
             {invoiceCount === 0 ? (
               "No invoices yet"
             ) : (
-              <Link href="/library" className="text-accent hover:underline">
+              <Link
+                href={`/library?contact=${encodeURIComponent(contact.email)}`}
+                className="text-accent hover:underline"
+              >
                 {invoiceCount} invoice{invoiceCount === 1 ? "" : "s"}
               </Link>
             )}

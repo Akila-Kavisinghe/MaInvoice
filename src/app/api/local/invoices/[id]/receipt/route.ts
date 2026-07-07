@@ -71,9 +71,9 @@ export async function POST(
   return NextResponse.json({ entry });
 }
 
-/** Stream the receipt for in-browser preview. */
+/** Stream one receipt (by `?i=` index, default 0) for in-browser preview. */
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const gate = localModeUnavailable();
@@ -83,12 +83,13 @@ export async function GET(
   }
 
   const { id } = await params;
-  const found = await getReceiptFile(id);
+  const index = Number(new URL(req.url).searchParams.get("i") ?? "0");
+  const found = await getReceiptFile(id, Number.isFinite(index) ? index : 0);
   if (!found) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const filename = found.entry.receiptPath!.split("/").pop() ?? "receipt";
+  const filename = found.relPath.split("/").pop() ?? "receipt";
   const ext = filename.slice(filename.lastIndexOf(".")).toLowerCase();
   return new NextResponse(new Uint8Array(found.file), {
     status: 200,
@@ -100,7 +101,7 @@ export async function GET(
   });
 }
 
-/** Detach and delete the receipt file (keeps the paid flag). */
+/** Detach and delete one receipt file (by `?i=` index). Keeps the paid flag. */
 export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -115,7 +116,9 @@ export async function DELETE(
   }
 
   const { id } = await params;
-  const entry = await removeReceipt(id);
+  const raw = new URL(req.url).searchParams.get("i");
+  const index = raw != null && Number.isFinite(Number(raw)) ? Number(raw) : undefined;
+  const entry = await removeReceipt(id, index);
   if (!entry) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

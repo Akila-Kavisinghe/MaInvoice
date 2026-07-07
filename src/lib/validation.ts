@@ -143,6 +143,7 @@ export const invoicePatchSchema = z
   .object({
     emailReceived: z.boolean().optional(),
     paid: z.boolean().optional(),
+    paidReason: trimmed.max(200).optional(),
     taxCategory: z
       .string()
       .refine((v) => TAX_CATEGORY_IDS.includes(v), "Unknown category")

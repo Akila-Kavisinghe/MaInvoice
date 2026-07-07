@@ -40,8 +40,11 @@ const nextConfig = {
   poweredByHeader: false,
   // Local library mode gets its own build dir so `pnpm local` can run
   // alongside `pnpm dev` in the same checkout without the two dev servers
-  // clobbering each other's build artifacts.
-  distDir: process.env.LOCAL_MODE === "1" ? ".next-local" : ".next",
+  // clobbering each other's build artifacts. NEXT_DIST_DIR overrides it so an
+  // isolated test server never clobbers the real dev app's `.next-local`.
+  distDir:
+    process.env.NEXT_DIST_DIR ||
+    (process.env.LOCAL_MODE === "1" ? ".next-local" : ".next"),
   // Self-contained server bundle for the packaged desktop app (electron/).
   // Never set on Vercel, so the deployed build is unaffected. Pinning the
   // tracing root keeps server.js at standalone/server.js instead of nesting

@@ -15,8 +15,9 @@ export interface LibraryEntry {
   contactEmail?: string;
   contactName?: string;
   emailReceived?: boolean;
-  receiptPath?: string;
+  receiptPaths?: string[];
   paidAt?: string;
+  paidReason?: string;
   taxCategory?: string;
   /** Custom category tag name — its T2125 mapping wins over taxCategory. */
   categoryTag?: string;
