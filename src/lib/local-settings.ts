@@ -32,6 +32,8 @@ interface LocalSettings {
   remoteToken?: string;
   /** "From" identity on outbound invoices. */
   business?: Partial<BusinessInfo>;
+  /** Demo mode: hide all dollar amounts in the UI. */
+  hideAmounts?: boolean;
 }
 
 // Cached parse, invalidated by file mtime so out-of-band edits (or another
@@ -123,4 +125,13 @@ export function resolveBusiness(): BusinessInfo {
 
 export function saveBusiness(business: Partial<BusinessInfo>): void {
   writeSettings({ business });
+}
+
+/** Demo mode: when on, the UI masks every dollar amount. */
+export function resolveHideAmounts(): boolean {
+  return readSettings().hideAmounts === true;
+}
+
+export function saveHideAmounts(hide: boolean): void {
+  writeSettings({ hideAmounts: hide });
 }

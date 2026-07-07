@@ -19,6 +19,14 @@ export default function LinksView() {
   const [links, setLinks] = useState<LinkRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [hideAmounts, setHideAmounts] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/local/settings")
+      .then((r) => r.json())
+      .then((d) => setHideAmounts(!!d.hideAmounts))
+      .catch(() => {});
+  }, []);
 
   const load = useCallback(() => {
     fetch("/api/local/links")
@@ -82,7 +90,13 @@ export default function LinksView() {
         </Card>
       ) : null}
 
-      <LinkSections links={links ?? []} copied={copied} onCopy={copy} onChanged={load} />
+      <LinkSections
+        links={links ?? []}
+        copied={copied}
+        onCopy={copy}
+        onChanged={load}
+        hideAmounts={hideAmounts}
+      />
     </>
   );
 }
@@ -92,11 +106,13 @@ function LinkSections({
   copied,
   onCopy,
   onChanged,
+  hideAmounts,
 }: {
   links: LinkRow[];
   copied: string | null;
   onCopy: (url: string) => void;
   onChanged: () => void;
+  hideAmounts: boolean;
 }) {
   const active = links.filter((l) => !l.archivedAt);
   const archived = links.filter((l) => l.archivedAt);
@@ -155,6 +171,7 @@ function LinkSections({
 
       <SubmissionsTable
         submissions={l.submissions}
+        hideAmounts={hideAmounts}
         onDelete={async (s) => {
           await fetch(
             `/api/local/submissions?token=${encodeURIComponent(l.token)}&email=${encodeURIComponent(s.bandmateEmail)}`,

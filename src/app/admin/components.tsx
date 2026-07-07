@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { formatMoney } from "@/lib/format";
+import { displayMoney } from "@/lib/format";
 
 /** Shared bits for the admin pages. */
 
@@ -79,10 +79,13 @@ export function CopyField({ value, compact }: { value: string; compact?: boolean
 export function SubmissionsTable({
   submissions,
   onDelete,
+  hideAmounts = false,
 }: {
   submissions: Submission[];
   /** When provided, each row gets a delete button (with confirmation). */
   onDelete?: (s: Submission) => Promise<void>;
+  /** Demo mode: mask every dollar amount. */
+  hideAmounts?: boolean;
 }) {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const total = submissions.reduce((sum, s) => sum + s.amount, 0);
@@ -90,7 +93,7 @@ export function SubmissionsTable({
   async function remove(s: Submission) {
     if (
       !window.confirm(
-        `Delete ${s.bandmateName}'s submission (${s.invoiceNumber}, ${formatMoney(s.amount)}) from this link?\n\n` +
+        `Delete ${s.bandmateName}'s submission (${s.invoiceNumber}, ${displayMoney(s.amount, hideAmounts)}) from this link?\n\n` +
           `This removes the record permanently — if they resubmit, they'll get a new invoice number. ` +
           `Any PDF already synced to a library is not affected.`,
       )
@@ -133,7 +136,7 @@ export function SubmissionsTable({
                   </td>
                   <td className="py-1.5 pr-3 text-slate-600">{s.invoiceNumber}</td>
                   <td className="py-1.5 pr-3 text-right text-slate-800">
-                    {formatMoney(s.amount)}
+                    {displayMoney(s.amount, hideAmounts)}
                   </td>
                   <td className="py-1.5 text-xs text-slate-500">
                     {new Date(s.submittedAt).toLocaleDateString("en-CA", {
@@ -163,7 +166,7 @@ export function SubmissionsTable({
                   Total
                 </td>
                 <td className="pt-1.5 text-right text-sm font-semibold text-slate-800">
-                  {formatMoney(total)}
+                  {displayMoney(total, hideAmounts)}
                 </td>
                 <td colSpan={onDelete ? 2 : 1} />
               </tr>

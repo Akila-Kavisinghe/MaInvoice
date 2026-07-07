@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Banner, Button, Card, Input, Label, Textarea } from "@/components/ui";
-import { formatMoney } from "@/lib/format";
+import { HIDDEN_MONEY, displayMoney } from "@/lib/format";
 import { TAX_CATEGORIES, effectiveTaxCategoryId, taxCategoryById } from "@/lib/t2125";
 import type { CategoryTag, Contact, LibraryEntry, RemoteInfo } from "./lib-types";
 import { tagColorClasses } from "./tag-colors";
@@ -32,6 +32,7 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
   const [contactFilter, setContactFilter] = useState<string | null>(null);
   const [paidFilter, setPaidFilter] = useState<PaidFilter>("all");
   const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [hideAmounts, setHideAmounts] = useState(false);
 
   const load = useCallback(() => {
     fetch("/api/local/invoices")
@@ -63,7 +64,10 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
   useEffect(() => {
     fetch("/api/local/settings")
       .then((r) => r.json())
-      .then((d) => setRemote({ url: d.remoteUrl, configured: d.remoteConfigured }))
+      .then((d) => {
+        setRemote({ url: d.remoteUrl, configured: d.remoteConfigured });
+        setHideAmounts(!!d.hideAmounts);
+      })
       .catch(() => setRemote({ url: null, configured: false }));
   }, []);
 
@@ -194,6 +198,7 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
         categoryTags={categoryTags}
         allEventTags={allEventTags(invoices)}
         allEventNames={allEventNames(invoices)}
+        hideAmounts={hideAmounts}
         onChanged={load}
       />
     </>
@@ -303,6 +308,7 @@ function InvoiceList({
   categoryTags,
   allEventTags,
   allEventNames,
+  hideAmounts,
   onChanged,
 }: {
   invoices: LibraryEntry[];
@@ -311,6 +317,7 @@ function InvoiceList({
   categoryTags: CategoryTag[];
   allEventTags: string[];
   allEventNames: string[];
+  hideAmounts: boolean;
   onChanged: () => void;
 }) {
   if (invoices.length === 0) {
@@ -373,6 +380,7 @@ function InvoiceList({
                 categoryTags={categoryTags}
                 allEventTags={allEventTags}
                 allEventNames={allEventNames}
+                hideAmounts={hideAmounts}
                 onChanged={onChanged}
               />
             ))}
@@ -389,6 +397,7 @@ function InvoiceRow({
   categoryTags,
   allEventTags,
   allEventNames,
+  hideAmounts,
   onChanged,
 }: {
   invoice: LibraryEntry;
@@ -397,6 +406,7 @@ function InvoiceRow({
   categoryTags: CategoryTag[];
   allEventTags: string[];
   allEventNames: string[];
+  hideAmounts: boolean;
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -628,24 +638,29 @@ function InvoiceRow({
           />
         </td>
         <td className="py-2 pr-4 text-right tabular-nums text-slate-700">
-          <EditableCell
-            type="number"
-            value={typeof invoice.amount === "number" ? String(invoice.amount) : ""}
-            display={
-              typeof invoice.amount === "number" ? (
-                formatMoney(invoice.amount)
-              ) : (
-                <span className="text-slate-400">—</span>
-              )
-            }
-            inputClassName="text-right"
-            onSave={(v) => {
-              const s = v.trim();
-              const n = s === "" ? null : Number(s);
-              if (n !== null && !Number.isFinite(n)) return;
-              patch({ amount: n });
-            }}
-          />
+          {hideAmounts ? (
+            // Demo mode: masked and NOT editable (editing would reveal it).
+            <span className="text-slate-400">{HIDDEN_MONEY}</span>
+          ) : (
+            <EditableCell
+              type="number"
+              value={typeof invoice.amount === "number" ? String(invoice.amount) : ""}
+              display={
+                typeof invoice.amount === "number" ? (
+                  displayMoney(invoice.amount)
+                ) : (
+                  <span className="text-slate-400">—</span>
+                )
+              }
+              inputClassName="text-right"
+              onSave={(v) => {
+                const s = v.trim();
+                const n = s === "" ? null : Number(s);
+                if (n !== null && !Number.isFinite(n)) return;
+                patch({ amount: n });
+              }}
+            />
+          )}
         </td>
         <td className="py-2 text-slate-500">
           <EditableCell

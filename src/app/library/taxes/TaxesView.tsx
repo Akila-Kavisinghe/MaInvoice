@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Banner, Card, Input, Label } from "@/components/ui";
-import { formatDate, formatMoney } from "@/lib/format";
+import { displayMoney, formatDate } from "@/lib/format";
 import { TAX_CATEGORIES, effectiveTaxCategoryId, taxCategoryById } from "@/lib/t2125";
 import type { CategoryTag, LibraryEntry } from "../lib-types";
 import { tagColorClasses } from "../tag-colors";
@@ -24,6 +24,7 @@ export default function TaxesView() {
   const [tags, setTags] = useState<CategoryTag[]>([]);
   const [year, setYear] = useState<string>(String(new Date().getFullYear()));
   const [open, setOpen] = useState<string | null>(null);
+  const [hideAmounts, setHideAmounts] = useState(false);
 
   const load = useCallback(() => {
     fetch("/api/local/invoices")
@@ -33,6 +34,10 @@ export default function TaxesView() {
     fetch("/api/local/tags")
       .then((r) => (r.ok ? r.json() : { tags: [] }))
       .then((d) => setTags(d.tags ?? []))
+      .catch(() => {});
+    fetch("/api/local/settings")
+      .then((r) => r.json())
+      .then((d) => setHideAmounts(!!d.hideAmounts))
       .catch(() => {});
   }, []);
 
@@ -103,7 +108,9 @@ export default function TaxesView() {
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <span className="text-sm font-semibold text-slate-800">
-              {typeof e.amount === "number" ? formatMoney(e.amount) : "no amount"}
+              {typeof e.amount === "number"
+                ? displayMoney(e.amount, hideAmounts)
+                : "no amount"}
             </span>
             <a
               href={`/api/local/invoices/${e.id}`}
@@ -139,7 +146,7 @@ export default function TaxesView() {
           </p>
         </div>
         <span className="shrink-0 text-base font-semibold text-slate-800">
-          {formatMoney(sum(entries))}
+          {displayMoney(sum(entries), hideAmounts)}
           <span className="ml-2 text-xs font-normal text-slate-400">
             {open === key ? "▲" : "▼"}
           </span>
@@ -198,7 +205,7 @@ export default function TaxesView() {
           <Banner tone="error">
             {uncategorized.length} expense entr{uncategorized.length === 1 ? "y" : "ies"} in{" "}
             {year} {uncategorized.length === 1 ? "is" : "are"} uncategorized (
-            {formatMoney(sum(uncategorized))}) — assign categories on the{" "}
+            {displayMoney(sum(uncategorized), hideAmounts)}) — assign categories on the{" "}
             <Link href="/library" className="font-medium underline">
               Invoices page
             </Link>{" "}
@@ -216,7 +223,7 @@ export default function TaxesView() {
           Expenses
         </h2>
         <span className="text-sm font-semibold text-slate-800">
-          Total {formatMoney(totalCurrent)}
+          Total {displayMoney(totalCurrent, hideAmounts)}
         </span>
       </div>
       <div className="mt-2 space-y-2">

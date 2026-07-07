@@ -9,6 +9,14 @@ export function formatMoney(amount: number): string {
   return money.format(amount);
 }
 
+/** Masked placeholder for hidden amounts (demo mode). */
+export const HIDDEN_MONEY = "$•••";
+
+/** formatMoney, but returns a mask when `hide` is on (demo mode). */
+export function displayMoney(amount: number, hide = false): string {
+  return hide ? HIDDEN_MONEY : money.format(amount);
+}
+
 /** "2026-06-28" -> "June 28, 2026". Falls back to the raw string. */
 export function formatDate(iso?: string): string {
   if (!iso) return "";

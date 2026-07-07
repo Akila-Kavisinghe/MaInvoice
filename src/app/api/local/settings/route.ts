@@ -6,9 +6,11 @@ import { localModeUnavailable } from "@/lib/local-mode";
 import {
   expandHome,
   resolveBusiness,
+  resolveHideAmounts,
   resolveInvoiceDir,
   resolveRemoteSync,
   saveBusiness,
+  saveHideAmounts,
   saveInvoiceDir,
   saveRemoteSync,
 } from "@/lib/local-settings";
@@ -35,10 +37,16 @@ const settingsSchema = z
       .max(200)
       .optional(),
     business: businessSchema.optional(),
+    hideAmounts: z.boolean().optional(),
   })
-  .refine((d) => d.path || (d.remoteUrl && d.remoteToken) || d.business, {
-    message: "Nothing to save",
-  })
+  .refine(
+    (d) =>
+      d.path ||
+      (d.remoteUrl && d.remoteToken) ||
+      d.business ||
+      d.hideAmounts !== undefined,
+    { message: "Nothing to save" },
+  )
   .refine((d) => !!d.remoteUrl === !!d.remoteToken, {
     message: "Enter both the server URL and the sync token",
   });
@@ -51,6 +59,7 @@ function settingsResponse() {
     remoteUrl: remote?.url ?? null,
     remoteConfigured: remote !== null,
     business: resolveBusiness(),
+    hideAmounts: resolveHideAmounts(),
   });
 }
 
@@ -102,6 +111,10 @@ export async function POST(req: Request) {
 
   if (parsed.data.business) {
     saveBusiness(parsed.data.business);
+  }
+
+  if (parsed.data.hideAmounts !== undefined) {
+    saveHideAmounts(parsed.data.hideAmounts);
   }
 
   return settingsResponse();

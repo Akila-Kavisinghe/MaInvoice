@@ -21,6 +21,8 @@ export default function SettingsView({ initialDir }: { initialDir: string | null
   const [changingFolder, setChangingFolder] = useState(initialDir === null);
   const [remote, setRemote] = useState<RemoteInfo | null>(null);
   const [business, setBusiness] = useState<BusinessInfo>(EMPTY_BUSINESS);
+  const [hideAmounts, setHideAmounts] = useState(false);
+  const [savingHide, setSavingHide] = useState(false);
 
   useEffect(() => {
     fetch("/api/local/settings")
@@ -28,9 +30,27 @@ export default function SettingsView({ initialDir }: { initialDir: string | null
       .then((d) => {
         setRemote({ url: d.remoteUrl, configured: d.remoteConfigured });
         if (d.business) setBusiness(d.business);
+        setHideAmounts(!!d.hideAmounts);
       })
       .catch(() => setRemote({ url: null, configured: false }));
   }, []);
+
+  async function toggleHideAmounts(next: boolean) {
+    setHideAmounts(next); // optimistic
+    setSavingHide(true);
+    try {
+      const res = await fetch("/api/local/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hideAmounts: next }),
+      });
+      if (!res.ok) setHideAmounts(!next); // revert on failure
+    } catch {
+      setHideAmounts(!next);
+    } finally {
+      setSavingHide(false);
+    }
+  }
 
   return (
     <>
@@ -86,6 +106,27 @@ export default function SettingsView({ initialDir }: { initialDir: string | null
         initial={business}
         onSaved={setBusiness}
       />
+
+      {/* Display / privacy */}
+      <Card className="mt-5 p-5">
+        <h2 className="text-lg font-semibold text-ink">Display</h2>
+        <label className="mt-3 flex items-start gap-3">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 rounded border-slate-300"
+            checked={hideAmounts}
+            disabled={savingHide}
+            onChange={(e) => toggleHideAmounts(e.target.checked)}
+          />
+          <span className="text-sm">
+            <span className="font-medium text-ink">Hide dollar amounts</span>
+            <span className="mt-0.5 block text-dim">
+              Masks every amount across Invoices, Links, and Taxes — handy when
+              demoing the app to someone without showing your numbers.
+            </span>
+          </span>
+        </label>
+      </Card>
     </>
   );
 }

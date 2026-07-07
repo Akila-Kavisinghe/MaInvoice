@@ -31,10 +31,11 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    ".next-cf-test/types/**/*.ts",
     ".next-local/types/**/*.ts",
     ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next-cf-test/types/**/*.ts"
+    ".next-hide-test/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"
