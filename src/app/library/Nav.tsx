@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/ui";
+import SyncButton from "./SyncButton";
 
 /** Shared header for the local library: Invoices / Create + settings gear. */
 export default function Nav() {
@@ -33,6 +34,7 @@ export default function Nav() {
         {tab("/library/create", "Create")}
         {tab("/library/contacts", "Contacts")}
         {tab("/library/taxes", "Taxes")}
+        <SyncButton />
         <Link
           href="/library/settings"
           aria-label="Settings"

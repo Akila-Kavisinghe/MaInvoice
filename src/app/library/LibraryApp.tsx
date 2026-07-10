@@ -8,6 +8,7 @@ import { TAX_CATEGORIES, effectiveTaxCategoryId, taxCategoryById } from "@/lib/t
 import type { CategoryTag, Contact, LibraryEntry, RemoteInfo } from "./lib-types";
 import { tagColorClasses } from "./tag-colors";
 import FolderPicker from "./FolderPicker";
+import { SYNCED_EVENT } from "./SyncButton";
 
 interface Feedback {
   tone: "success" | "error" | "info";
@@ -26,7 +27,6 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
   const [categoryTags, setCategoryTags] = useState<CategoryTag[]>([]);
   const [unindexed, setUnindexed] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
-  const [syncing, setSyncing] = useState(false);
   // Filters
   const [direction, setDirection] = useState<DirectionFilter>("all");
   const [contactFilter, setContactFilter] = useState<string | null>(null);
@@ -71,15 +71,14 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
       .catch(() => setRemote({ url: null, configured: false }));
   }, []);
 
-  // Auto-sync: once on load and every 5 minutes while the app is open.
-  // Silent unless something was pulled or something went wrong.
+  // Sync never runs automatically — it's a manual click on the header's sync
+  // button (SyncButton, next to the settings gear). When it pulls new
+  // invoices it broadcasts SYNCED_EVENT; re-read the list from disk then.
   useEffect(() => {
-    if (!remote?.configured || !invoiceDir) return;
-    syncNow(true);
-    const id = setInterval(() => syncNow(true), 5 * 60 * 1000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remote?.configured, invoiceDir]);
+    const onSynced = () => load();
+    window.addEventListener(SYNCED_EVENT, onSynced);
+    return () => window.removeEventListener(SYNCED_EVENT, onSynced);
+  }, [load]);
 
   // First run: no folder chosen yet.
   if (!invoiceDir) {
@@ -102,49 +101,9 @@ export default function LibraryApp({ initialDir }: { initialDir: string | null }
     );
   }
 
-  async function syncNow(auto = false) {
-    setSyncing(true);
-    if (!auto) setFeedback(null);
-    try {
-      const res = await fetch("/api/local/sync", { method: "POST" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setFeedback({ tone: "error", message: data.error ?? "Sync failed" });
-        return;
-      }
-      if (!auto || data.pulled > 0 || data.errors?.length) {
-        const parts = [
-          data.pulled === 0
-            ? "Nothing new to pull."
-            : `Pulled ${data.pulled} invoice${data.pulled === 1 ? "" : "s"}.`,
-          ...(data.errors ?? []),
-        ];
-        setFeedback({
-          tone: data.errors?.length ? "error" : "success",
-          message: parts.join(" "),
-        });
-      }
-      if (data.pulled > 0 || !auto) load();
-    } catch {
-      if (!auto) setFeedback({ tone: "error", message: "Network error" });
-    } finally {
-      setSyncing(false);
-    }
-  }
-
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold text-ink">Invoices</h1>
-        <Button
-          onClick={() => syncNow()}
-          disabled={syncing || !remote?.configured}
-          className="w-auto px-5 py-2.5 text-sm"
-          title={remote?.configured ? undefined : "Connect a server in Settings to sync"}
-        >
-          {syncing ? "Syncing…" : "Sync now"}
-        </Button>
-      </div>
+      <h1 className="text-2xl font-semibold text-ink">Invoices</h1>
 
       {feedback ? (
         <div className="mt-4">
@@ -327,7 +286,7 @@ function InvoiceList({
           "No invoices match the current filters."
         ) : (
           <>
-            No invoices yet. Press &quot;Sync now&quot; to pull invoices
+            No invoices yet. Use the sync button in the header to pull invoices
             submitted through your links, or{" "}
             <Link href="/library/create" className="font-medium text-accent">
               create one
