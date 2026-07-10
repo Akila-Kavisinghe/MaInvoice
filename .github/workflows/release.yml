@@ -184,10 +184,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
-          files=$(ls artifacts/*/*.dmg artifacts/*/*.exe 2>/dev/null || true)
-          echo "Attaching: latest.json $files"
+          # nullglob: patterns with no match expand to nothing (not the literal
+          # pattern). Array + "${files[@]}" preserves filenames with spaces,
+          # e.g. "WONDERvoice Setup 1.0.0.exe".
+          shopt -s nullglob
+          files=(artifacts/*/*.dmg artifacts/*/*.exe)
+          printf 'Attaching: %s\n' latest.json "${files[@]}"
           gh release create "v${VERSION}" \
             --repo "$RELEASES_REPO" \
             --title "WONDERvoice v${VERSION}" \
             --notes "${NOTES}" \
-            latest.json $files
+            latest.json "${files[@]}"
