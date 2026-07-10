@@ -1,0 +1,136 @@
+name: Release desktop app
+
+# Fires when you push a version tag (e.g. `git tag v1.1.0 && git push --tags`),
+# or manually from the Actions tab. Builds the macOS .dmg and Windows .exe,
+# writes latest.json, and publishes them all as a Release in the PUBLIC
+# releases repo — this source repo can stay private.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, no leading v (e.g. 1.1.0)"
+        required: true
+      notes:
+        description: "Release notes shown in the app's update banner"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+env:
+  # The public repo that holds the downloadable installers + latest.json.
+  RELEASES_REPO: Akila-Kavisinghe/MaInvoice-releases
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: mac
+          - os: windows-latest
+            artifact: win
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Resolve the version from the tag (v1.1.0 -> 1.1.0) or the manual input.
+      - name: Resolve version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Building version $VERSION"
+
+      # Stamp the version into both package.json files so the packaged app's
+      # app.getVersion() matches the tag (the update banner compares them).
+      - name: Set package versions
+        shell: bash
+        run: |
+          node -e "const fs=require('fs');for(const p of ['package.json','electron/package.json']){const j=JSON.parse(fs.readFileSync(p));j.version=process.env.VERSION;fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');}"
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          pnpm install --no-frozen-lockfile
+          pnpm --dir electron install --no-frozen-lockfile
+
+      - name: Build desktop app
+        shell: bash
+        env:
+          # Never try to sign on CI: the mac build is intentionally unsigned
+          # (electron-builder.yml sets identity: null); this stops it probing
+          # the runner keychain.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: bash electron/build.sh
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.artifact }}
+          path: |
+            electron/dist/*.dmg
+            electron/dist/*.exe
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            NOTES="${{ github.event.inputs.notes }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+            NOTES=""
+          fi
+          [ -n "$NOTES" ] || NOTES="Version $VERSION is available."
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "NOTES=$NOTES" >> "$GITHUB_ENV"
+
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # The manifest the app fetches on launch. `url` is the public releases
+      # page the Download button opens; `version` drives the banner.
+      - name: Write latest.json
+        shell: bash
+        run: |
+          node -e "const fs=require('fs');fs.writeFileSync('latest.json',JSON.stringify({version:process.env.VERSION,url:'https://github.com/'+process.env.RELEASES_REPO+'/releases/latest',notes:process.env.NOTES},null,2)+'\n');"
+          cat latest.json
+
+      - name: Publish release to public repo
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          files=$(ls artifacts/*/*.dmg artifacts/*/*.exe 2>/dev/null || true)
+          echo "Attaching: latest.json $files"
+          gh release create "v${VERSION}" \
+            --repo "$RELEASES_REPO" \
+            --title "WONDERvoice v${VERSION}" \
+            --notes "${NOTES}" \
+            latest.json $files

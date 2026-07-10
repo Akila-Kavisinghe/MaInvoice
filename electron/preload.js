@@ -5,4 +5,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 // server-side dialog / in-page browser when running in a plain browser.
 contextBridge.exposeInMainWorld("wondervoice", {
   pickFolder: () => ipcRenderer.invoke("pick-folder"),
+  // Opens the pending update's download page in the user's real browser.
+  // No URL is passed from the page — main holds the vetted manifest URL.
+  openDownload: () => ipcRenderer.invoke("open-download"),
 });

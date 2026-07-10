@@ -27,8 +27,12 @@ fi
 pnpm exec electron-builder
 
 # electron-builder silently skips missing extraResources — fail loudly if the
-# server bundle didn't make it into the app.
-test -f "dist/mac-arm64/WONDERvoice.app/Contents/Resources/server/server.js" \
-  || { echo "ERROR: server bundle missing from packaged app"; exit 1; }
+# server bundle didn't make it into the app. The unpacked .app only exists on
+# macOS builds; skip the check on other hosts (e.g. Windows CI, which packs an
+# .exe and has no .app to inspect).
+if [ "$(uname)" = "Darwin" ]; then
+  test -f "dist/mac-arm64/WONDERvoice.app/Contents/Resources/server/server.js" \
+    || { echo "ERROR: server bundle missing from packaged app"; exit 1; }
+fi
 
 echo "==> Done. Artifacts in electron/dist/"
