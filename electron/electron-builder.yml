@@ -2,6 +2,8 @@ appId: com.wondervoice.library
 productName: WONDERvoice
 directories:
   output: dist
+  # App icons live here (build/icon.icns for mac, build/icon.ico for win).
+  buildResources: build
 
 files:
   - main.js
@@ -16,6 +18,7 @@ extraResources:
 
 mac:
   category: public.app-category.finance
+  icon: build/icon.icns
   target:
     - target: dmg
       arch: [arm64, x64]
@@ -25,6 +28,7 @@ mac:
   identity: null
 
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch: [x64]
