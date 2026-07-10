@@ -1,17 +1,22 @@
 name: Release desktop app
 
 # Fires when you push a version tag (e.g. `git tag v1.1.0 && git push --tags`),
-# or manually from the Actions tab. Builds the macOS .dmg, writes latest.json,
-# and publishes them as a Release in the PUBLIC releases repo — this source
-# repo can stay private.
+# or manually from the Actions tab. Builds the macOS .dmg and Windows .exe,
+# writes latest.json, and publishes them as a Release in the PUBLIC releases
+# repo — this source repo can stay private.
 #
-# NOTE: Windows .exe is temporarily disabled. The Next standalone server uses
-# pnpm's symlinked node_modules, which don't survive on Windows, and `next
-# build` also hits an EACCES bug on the Windows runner. Both need a dedicated
-# fix (hoisted node_modules); until then we ship macOS only. The whole thing
-# runs in ONE job on a macOS runner — exactly how the proven local build works
-# (electron/build.sh does the standalone build AND packaging with symlinks
-# intact), so there's no artifact round-trip to break the bundle.
+# Two independent build paths, because the Next standalone server uses pnpm's
+# symlinked node_modules:
+#   * macOS  — build.sh runs end-to-end in ONE macOS job. electron-builder
+#              copies the bundle (symlinks intact) straight into the .app, so
+#              there's no artifact round-trip to break the symlinks.
+#   * Windows — symlinks can't survive on Windows, so the bundle is built on
+#              Linux with a FLAT (hoisted) node_modules (no symlinks), then
+#              packaged into the .exe on a Windows runner. Building the bundle
+#              on Linux also sidesteps `next build`'s EACCES bug on Windows.
+#
+# The release job runs as long as macOS succeeded, and attaches whatever
+# installers were produced — so a Windows failure never blocks a Mac release.
 on:
   push:
     tags:
@@ -34,21 +39,19 @@ env:
   RELEASES_REPO: Akila-Kavisinghe/MaInvoice-releases
 
 jobs:
-  build:
+  # --- macOS: build + package in one job (symlinks preserved) ---------------
+  build-mac:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
         with:
           version: 8
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
 
-      # Resolve the version from the tag (v1.1.0 -> 1.1.0) or the manual input.
       - name: Resolve version
         shell: bash
         run: |
@@ -58,10 +61,7 @@ jobs:
             VERSION="${GITHUB_REF_NAME#v}"
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "Building version $VERSION"
 
-      # Stamp the version into both package.json files so the packaged app's
-      # app.getVersion() matches the tag (the update banner compares them).
       - name: Set package versions
         shell: bash
         run: |
@@ -72,10 +72,7 @@ jobs:
           pnpm install --no-frozen-lockfile
           pnpm --dir electron install --no-frozen-lockfile
 
-      # build.sh: standalone Next build -> fold in static assets -> electron-builder
-      # (dmg + zip). afterPack.js ad-hoc signs the bundle. identity: null means no
-      # Apple cert is needed; no keychain to probe.
-      - name: Build desktop app
+      - name: Build + package (dmg)
         shell: bash
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -88,8 +85,101 @@ jobs:
           path: electron/dist/*.dmg
           if-no-files-found: error
 
+  # --- Windows step 1: build a FLAT (symlink-free) server bundle on Linux ----
+  bundle-win:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # hoisted node_modules = flat real dirs, no .pnpm symlink farm. The Next
+      # standalone output then mirrors that (symlink-free), so it survives the
+      # artifact round-trip AND resolves on Windows.
+      - name: Install dependencies (hoisted, symlink-free)
+        run: |
+          pnpm config set node-linker hoisted
+          pnpm install --no-frozen-lockfile
+
+      - name: Build standalone Next server
+        run: |
+          rm -rf .next-local
+          LOCAL_MODE=1 BUILD_STANDALONE=1 pnpm build
+          test -f .next-local/standalone/server.js
+          # sanity: the symlink gotcha must be gone
+          test -z "$(find .next-local/standalone -type l)" || { echo "ERROR: bundle still has symlinks"; exit 1; }
+          cp -R .next-local/static .next-local/standalone/.next-local/static
+          cp -R public .next-local/standalone/public
+          rm -rf .next-local/standalone/data
+
+      - name: Upload standalone bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: win-bundle
+          path: .next-local/standalone
+          include-hidden-files: true
+          if-no-files-found: error
+
+  # --- Windows step 2: package the .exe on a Windows runner ------------------
+  package-win:
+    needs: bundle-win
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Resolve version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Set app version
+        shell: bash
+        run: |
+          node -e "const fs=require('fs');const p='electron/package.json';const j=JSON.parse(fs.readFileSync(p));j.version=process.env.VERSION;fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');"
+
+      # electron-builder's extraResources reads ../.next-local/standalone.
+      - name: Download standalone bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: win-bundle
+          path: .next-local/standalone
+
+      - name: Install electron build deps
+        shell: bash
+        run: pnpm --dir electron install --no-frozen-lockfile
+
+      - name: Package installer (exe)
+        shell: bash
+        working-directory: electron
+        run: pnpm exec electron-builder
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-win
+          path: electron/dist/*.exe
+          if-no-files-found: error
+
+  # --- Publish: runs if macOS succeeded; attaches whatever exists -----------
   release:
-    needs: build
+    needs: [build-mac, package-win]
+    if: ${{ always() && needs.build-mac.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Resolve version
@@ -112,8 +202,6 @@ jobs:
           path: artifacts
           pattern: installers-*
 
-      # The manifest the app fetches on launch. `url` is the public releases
-      # page the Download button opens; `version` drives the banner.
       - name: Write latest.json
         shell: bash
         run: |
@@ -125,8 +213,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
         run: |
-          # nullglob: patterns with no match expand to nothing. Array +
-          # "${files[@]}" preserves filenames with spaces.
+          # nullglob: no-match patterns vanish. Array + "${files[@]}" keeps
+          # filenames with spaces (e.g. "WONDERvoice Setup 1.0.0.exe") intact.
           shopt -s nullglob
           files=(artifacts/*/*.dmg artifacts/*/*.exe)
           printf 'Attaching: %s\n' latest.json "${files[@]}"
