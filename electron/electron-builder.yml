@@ -10,6 +10,10 @@ files:
   - preload.js
   - package.json
 
+# Ad-hoc signs the macOS bundle after packing (see afterPack.js) so downloaded
+# copies aren't flagged "damaged" by Gatekeeper.
+afterPack: ./afterPack.js
+
 # The standalone Next.js server (built by build.sh) ships as a resource and
 # is spawned by main.js with Electron's own binary as Node.
 extraResources:
