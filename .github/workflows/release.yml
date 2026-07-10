@@ -4,6 +4,15 @@ name: Release desktop app
 # or manually from the Actions tab. Builds the macOS .dmg and Windows .exe,
 # writes latest.json, and publishes them all as a Release in the PUBLIC
 # releases repo — this source repo can stay private.
+#
+# Pipeline:
+#   bundle   — build the portable Next standalone server ONCE on Linux.
+#   package  — download that bundle and wrap it in a .dmg (mac) / .exe (win).
+#   release  — collect the installers, write latest.json, publish the Release.
+#
+# The Next server is plain Node JS, so building it once and packaging it per-OS
+# avoids running `next build` on the Windows runner (its file tracing chokes on
+# C:\...\WindowsApps app-alias reparse points with EACCES).
 on:
   push:
     tags:
@@ -26,7 +35,47 @@ env:
   RELEASES_REPO: Akila-Kavisinghe/MaInvoice-releases
 
 jobs:
-  build:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      # Build the self-contained standalone server + fold in the static assets
+      # the standalone output doesn't include (mirrors electron/build.sh's first
+      # half, minus the platform-specific packaging).
+      - name: Build standalone Next server
+        run: |
+          rm -rf .next-local
+          LOCAL_MODE=1 BUILD_STANDALONE=1 pnpm build
+          test -f .next-local/standalone/server.js
+          cp -R .next-local/static .next-local/standalone/.next-local/static
+          cp -R public .next-local/standalone/public
+          rm -rf .next-local/standalone/data
+
+      # include-hidden-files is required: the standalone bundle nests its
+      # runtime under a dot-dir (.next-local/), which v4 would otherwise drop.
+      - name: Upload standalone bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: standalone
+          path: .next-local/standalone
+          include-hidden-files: true
+          if-no-files-found: error
+
+  package:
+    needs: bundle
     strategy:
       fail-fast: false
       matrix:
@@ -58,29 +107,36 @@ jobs:
             VERSION="${GITHUB_REF_NAME#v}"
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "Building version $VERSION"
+          echo "Packaging version $VERSION"
 
-      # Stamp the version into both package.json files so the packaged app's
+      # Stamp the version into electron/package.json so the packaged app's
       # app.getVersion() matches the tag (the update banner compares them).
-      - name: Set package versions
+      - name: Set app version
         shell: bash
         run: |
-          node -e "const fs=require('fs');for(const p of ['package.json','electron/package.json']){const j=JSON.parse(fs.readFileSync(p));j.version=process.env.VERSION;fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');}"
+          node -e "const fs=require('fs');const p='electron/package.json';const j=JSON.parse(fs.readFileSync(p));j.version=process.env.VERSION;fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');"
 
-      - name: Install dependencies
-        shell: bash
-        run: |
-          pnpm install --no-frozen-lockfile
-          pnpm --dir electron install --no-frozen-lockfile
+      # electron-builder's extraResources reads ../.next-local/standalone, so
+      # restore the bundle to exactly that path.
+      - name: Download standalone bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: standalone
+          path: .next-local/standalone
 
-      - name: Build desktop app
+      - name: Install electron build deps
         shell: bash
+        run: pnpm --dir electron install --no-frozen-lockfile
+
+      - name: Package installer
+        shell: bash
+        working-directory: electron
         env:
-          # Never try to sign on CI: the mac build is intentionally unsigned
+          # Never sign on CI: the mac build is intentionally unsigned
           # (electron-builder.yml sets identity: null); this stops it probing
-          # the runner keychain.
+          # the runner keychain. Windows is unsigned too (SmartScreen warns).
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: bash electron/build.sh
+        run: pnpm exec electron-builder
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
@@ -92,7 +148,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: build
+    needs: package
     runs-on: ubuntu-latest
     steps:
       - name: Resolve version
@@ -113,6 +169,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: installers-*
 
       # The manifest the app fetches on launch. `url` is the public releases
       # page the Download button opens; `version` drives the banner.
